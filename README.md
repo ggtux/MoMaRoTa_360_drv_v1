@@ -32,7 +32,9 @@ WiFi und Setup-Verwaltung (optimiert aus parkplatz/CONNECT.h):
 #### `include/servo_control.h` & `src/servo_control.cpp`
 Servo-Motor-Steuerung (optimiert aus parkplatz/CONNECT.h):
 - Initialisierung des ST3215 Servos
+- Automatische Motor-ID Erkennung (scannt ID 0-10)
 - Bewegungsfunktionen: `moveServoToAngle()`, `moveServoByAngle()`
+- Reverse-Funktion: Kehrt Bewegungsrichtung um (negiert Delta)
 - Kalibrierung: `setZeroPointExact()`, `setMiddle()`
 - Feedback und Status: `getFeedback()`, `isServoMoving()`, `getServoAngle()`
 - Geschwindigkeits-Management: `setActiveSpeed()`, `getActiveSpeed()`
@@ -46,6 +48,16 @@ OLED Display-Steuerung (optimiert aus parkplatz/BOARD_DEV.h):
 - Status-Nachrichten während Initialisierung
 
 ## Wichtige Features
+
+### Motor-Mode (3) Exclusive
+- **Mode**: Ausschließlich Motor-Mode (3) - keine Positions-Servofunktion
+- **Auto-ID Detection**: Automatisches Scannen und Erkennen der Motor-ID (0-10)
+- **Virtuelle Positionierung**: Position wird in Software verwaltet (keine Hardware-Kalibrierung)
+
+### Reverse-Funktion
+- **Richtungsumkehr**: Kehrt die Bewegungsrichtung um
+- **Beispiel**: Position 0°, Ziel 45° → Normal: +1024 steps, Reverse: -1024 steps
+- **Verwendung**: Umgehen mechanischer Hindernisse im astronomischen Setup
 
 ### Gear Ratio Berechnung
 - **Übersetzung**: 1:2 (180° Getriebe = 360° Motor = 4096 Steps)
@@ -85,9 +97,11 @@ ASCOM-kompatible Software findet das Gerät automatisch über:
 
 ### Rotator-Steuerung
 - **Position anfahren**: 0-359.99° via Web-Interface oder ALPACA API
-- **Geschwindigkeit**: +/- Buttons (100 Steps pro Klick)
+- **Geschwindigkeit**: +/- Buttons (100 Steps pro Klick, Min: 100, Max: 4000)
+- **Reverse**: Kehrt Bewegungsrichtung um (z.B. +45° wird zu -45°)
 - **Kalibrierung**: "Set Middle" oder "Set Zero"
 - **Stop**: Sofortiger Halt jederzeit möglich
+- **Display**: On/Off Steuerung des OLED-Displays
 
 ## Entwickler-Informationen
 
