@@ -17,6 +17,7 @@
 // ============================================================================
 
 const int ALPACA_PORT = 80;
+const bool UDP_DISCOVERY_ENABLED = false;  // Set to true if you need ASCOM Alpaca auto-discovery
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -46,9 +47,13 @@ void setup() {
     displayMessage("Connecting", "WiFi...");
     initWiFi();
     
-    // Initialize ALPACA discovery
-    Serial.println("Initializing ALPACA discovery...");
-    initDiscovery(ALPACA_PORT);
+    // Initialize ALPACA discovery (optional - only for ASCOM auto-discovery)
+    if(UDP_DISCOVERY_ENABLED) {
+        Serial.println("Initializing ALPACA discovery...");
+        initDiscovery(ALPACA_PORT);
+    } else {
+        Serial.println("UDP Discovery disabled - ALPACA API available at http://<IP>/api/v1/rotator/0/");
+    }
     
     // Setup web server endpoints
     Serial.println("Setting up web server endpoints...");
@@ -72,10 +77,7 @@ void setup() {
     // Show ready message
     displayMessage("MoMa Rotator", "Ready!", getIPAddress().c_str());
     delay(2000);
-}Update OLED display
-    updateDisplay();
-    
-    // 
+}
 
 // ============================================================================
 // MAIN LOOP
@@ -85,11 +87,16 @@ void loop() {
     // Update servo feedback regularly
     getFeedback();
     
+    // Update OLED display
+    updateDisplay();
+    
     // Process DNS requests (for captive portal)
     processDNS();
     
-    // Handle ALPACA discovery packets
-    handleDiscovery();
+    // Handle ALPACA discovery packets (only if enabled)
+    if(UDP_DISCOVERY_ENABLED) {
+        handleDiscovery();
+    }
     
     // Small delay to prevent watchdog issues
     delay(1);

@@ -98,6 +98,18 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
     server.on("/setup/v1/rotator/0/configdevices", HTTP_GET, handleConfigDevices);
     server.on("/reset", HTTP_GET, handleResetWifi);
     
+    // Position and status endpoints (needed by control panel JavaScript)
+    server.on("/setup/v1/rotator/0/position", HTTP_GET, [](AsyncWebServerRequest *request) {
+        double pos = getServoAngle();
+        String posValue = String(pos, 2);
+        request->send(200, "text/plain", posValue);
+    });
+    
+    server.on("/setup/v1/rotator/0/printip", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String ip = getIPAddress();
+        request->send(200, "text/plain", ip);
+    });
+    
     // Control panel endpoints
     server.on("/cmd", HTTP_GET, [](AsyncWebServerRequest *request) {
         int cmdT = request->arg("inputT").toInt();

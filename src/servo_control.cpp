@@ -4,7 +4,9 @@
 // Hardware configuration
 #define S_RXD 18
 #define S_TXD 19
-#define MOTOR_ID 1
+
+// Motor ID - automatically detected on startup
+static int MOTOR_ID = 0;  // Default to 0, will be updated by scanForMotor()
 
 // Servo parameters from ST3215
 #define SERVO_STEPS 4096.0         // 0-4095 = 4096 Steps
@@ -35,12 +37,47 @@ s16 temperRead = 0;
 
 // Motor block detection
 int feedbackRetries = 0;
-const int MAX_FEEDBACK_RETRIES = 3;
+const int MAX_FEEDBACK_RETRIES = 10;
 bool motorBlocked = false;
+int consecutiveErrors = 0;
+const int ERROR_LOG_THRESHOLD = 100;
 
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
+
+int scanForMotor() {
+    Serial.println("\n=== Scanning for motor on bus ===");
+    for(int id = 0; id <= 10; id++) {
+        Serial.print("Trying ID ");
+        Serial.print(id);
+        Serial.print("... ");
+        
+        int result = st.FeedBack(id);
+        if(result != -1) {
+            s16 pos = st.ReadPos(-1);
+            s16 mode = st.ReadMode(id);
+            Serial.println("FOUND!");
+            Serial.print("  Position: ");
+            Serial.println(pos);
+            Serial.print("  Mode: ");
+            Serial.println(mode);
+            
+            // Automatically set the motor ID
+            MOTOR_ID = id;
+            Serial.print("\n>>> Motor-ID automatically set to: ");
+            Serial.print(MOTOR_ID);
+            Serial.println(" <<<\n");
+            return id;
+        }
+        Serial.println("no response");
+        delay(50);
+    }
+    Serial.println("=== No motor found ===");
+    Serial.println("WARNING: Using default MOTOR_ID = 0\n");
+    MOTOR_ID = 0;  // Fallback to 0
+    return -1;
+}
 
 void initServo() {
     Serial1.begin(1000000, SERIAL_8N1, S_RXD, S_TXD);
@@ -48,6 +85,15 @@ void initServo() {
     delay(200);
     
     while(!Serial1) {}
+
+    // Scan for motor to automatically detect ID
+    Serial.println("Checking motor connection...");
+    int foundID = scanForMotor();
+    if(foundID == -1) {
+        Serial.println("WARNING: No motor found! Check connections.");
+        Serial.println("Continuing with default MOTOR_ID = 0");
+    }
+    delay(500);
 
     // Set angle limits for full range
     Serial.println("Setting angle limits...");
@@ -94,6 +140,9 @@ void initServo() {
     // Start at virtual position 0
     currentTargetPosition = 0;
     Serial.println("Motor-Mode (3) initialized - virtual position set to 0°");
+    
+    // Update feedback to read all values including mode
+    getFeedback();
 }
 
 // ============================================================================
@@ -134,24 +183,32 @@ void getFeedback() {
         modeRead = st.ReadMode(MOTOR_ID);
         
         feedbackRetries = 0;
+        consecutiveErrors = 0;
+        motorBlocked = false;
         
         // Check for motor blockage via high load
         if(abs(loadRead) > 800) {
-            motorBlocked = true;
             Serial.print("Warning: High load (");
             Serial.print(loadRead);
             Serial.println("). Motor may be blocked!");
-        } else {
-            motorBlocked = false;
         }
     } else {
         feedbackRetries++;
+        consecutiveErrors++;
         
         if(feedbackRetries >= MAX_FEEDBACK_RETRIES) {
             motorBlocked = true;
-            Serial.println("FeedBack error - Motor blocked or not responding!");
-        } else {
-            delay(10);
+            // Only log error every ERROR_LOG_THRESHOLD times to avoid spam
+            if(consecutiveErrors % ERROR_LOG_THRESHOLD == 1) {
+                Serial.println("\n=== MOTOR COMMUNICATION ERROR ===");
+                Serial.print("FeedBack failed ");
+                Serial.print(consecutiveErrors);
+                Serial.println(" times");
+                Serial.print("Trying MOTOR_ID = ");
+                Serial.println(MOTOR_ID);
+                Serial.println("Check: 1) Motor power, 2) RX/TX wiring, 3) Motor ID");
+                Serial.println("================================\n");
+            }
         }
     }
 }
@@ -171,6 +228,7 @@ int getServoVoltage() { return voltageRead; }
 int getServoCurrent() { return currentRead; }
 int getServoTemperature() { return temperRead; }
 int getServoMode() { return modeRead; }
+int getMotorID() { return MOTOR_ID; }
 
 // ============================================================================
 // MOVEMENT FUNCTIONS

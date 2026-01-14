@@ -13,6 +13,7 @@ static const int udpPort = 32227;
 static IPAddress multicastAddress(233, 255, 255, 255);
 static char packetBuffer[255];
 static int alpacaPortGlobal = 80;
+static bool udpInitialized = false;
 
 // ============================================================================
 // INITIALIZATION
@@ -20,7 +21,14 @@ static int alpacaPortGlobal = 80;
 
 void initDiscovery(int alpacaPort) {
     alpacaPortGlobal = alpacaPort;
-    udp.beginMulticast(multicastAddress, udpPort);
+    if(WiFi.status() == WL_CONNECTED) {
+        udp.beginMulticast(multicastAddress, udpPort);
+        udpInitialized = true;
+        Serial.println("UDP Discovery initialized");
+    } else {
+        Serial.println("WARNING: WiFi not connected, UDP Discovery will start when WiFi is ready");
+        udpInitialized = false;
+    }
 }
 
 void setupAlpacaEndpoints(AsyncWebServer &server) {
@@ -87,6 +95,19 @@ void sendJSONResponse(AsyncWebServerRequest *request, JsonDocument &doc, int err
 // ============================================================================
 
 void handleDiscovery() {
+    // Only handle discovery if WiFi is connected
+    if(WiFi.status() != WL_CONNECTED) {
+        udpInitialized = false;
+        return;
+    }
+    
+    // Initialize UDP if not already done
+    if(!udpInitialized) {
+        udp.beginMulticast(multicastAddress, udpPort);
+        udpInitialized = true;
+        Serial.println("UDP Discovery re-initialized after WiFi connect");
+    }
+    
     int packetSize = udp.parsePacket();
     if (packetSize) {
         Serial.print("Discovery packet received: size=");

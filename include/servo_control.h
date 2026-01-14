@@ -2,6 +2,7 @@
 
 // Servo initialization and control
 void initServo();
+int scanForMotor();  // Scan for motor ID on the bus
 
 // Movement functions
 void moveServoToAngle(double angleDeg);
@@ -30,6 +31,7 @@ int getServoVoltage();
 int getServoCurrent();
 int getServoTemperature();
 int getServoMode();
+int getMotorID();
 
 // Position management
 int getCurrentTargetPosition();

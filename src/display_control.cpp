@@ -75,6 +75,8 @@ void updateDisplay() {
     displayMotorInfo();
 }
 
+int getMotorID();  // Forward declaration
+
 void displayMotorInfo() {
     if (!displayEnabled) return;
     
@@ -88,7 +90,7 @@ void displayMotorInfo() {
     
     // Line 2: Motor ID & Mode
     display.print(F("ID:"));
-    display.print(1);  // MOTOR_ID from servo_control
+    display.print(getMotorID());  // Get actual motor ID
     display.print(F(" Mode:"));
     display.println(getServoMode());
     
