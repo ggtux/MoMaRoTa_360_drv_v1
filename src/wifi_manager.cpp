@@ -70,7 +70,11 @@ void connectWiFi() {
 }
 
 void processDNS() {
-    dnsServer.processNextRequest();
+    // Only process DNS requests in AP mode (for captive portal)
+    // In STA mode (connected to home WiFi), DNS is not needed and causes UDP errors
+    if(WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+        dnsServer.processNextRequest();
+    }
 }
 
 String getIPAddress() {
@@ -110,8 +114,8 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
         request->send(200, "text/plain", ip);
     });
     
-    // Control panel endpoints
-    server.on("/cmd", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // Control panel command handler (register both short and full paths)
+    auto cmdHandler = [](AsyncWebServerRequest *request) {
         int cmdT = request->arg("inputT").toInt();
         int cmdI = request->arg("inputI").toInt();
         double cmdP = request->arg("inputP").toDouble();
@@ -150,9 +154,19 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
             case 21: // Display ON
                 displayOn();
                 break;
+            case 22: // Reverse ON
+                setReverseDirection(true);
+                break;
+            case 23: // Reverse OFF
+                setReverseDirection(false);
+                break;
         }
         request->send(200, "text/plain", "OK");
-    });
+    };
+    
+    server.on("/cmd", HTTP_GET, cmdHandler);
+    server.on("/setup/v1/rotator/0/cmd", HTTP_GET, cmdHandler);
+
     
     server.on("/position", HTTP_GET, [](AsyncWebServerRequest *request) {
         double pos = getServoAngle();
@@ -306,6 +320,9 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "<div style='display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px'>";
     html += "<input type='number' id='posInput' min='0' max='359.99' step='0.01' value='0'>";
     html += "<button class='button' onclick='gotoTarget()'>Goto</button></div>";
+    html += "<div class='centered' style='gap:8px'><label style='font-size:0.95rem'>Reverse:</label>";
+    html += "<input type='checkbox' id='reverseCheckbox' onchange='toggleReverse()' style='width:auto;height:18px'>";
+    html += "</div>";
     html += "<div class='small-label'>(0 .. 359.99&deg;)</div>";
     html += "<div class='divider'></div>";
     html += "<div class='section-title'>Goto Position ...</div>";
@@ -344,6 +361,9 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "if(this.readyState==4&&this.status==200){";
     html += "document.getElementById('ip').innerHTML=this.responseText;}};";
     html += "x.open('GET','printip',true);x.send();}";
+    html += "function toggleReverse(){";
+    html += "var checked=document.getElementById('reverseCheckbox').checked;";
+    html += "cmd(1,checked?22:23);}";
     html += "setInterval(getData,300);";
     html += "setInterval(getIP,1200);";
     html += "</script></body></html>";

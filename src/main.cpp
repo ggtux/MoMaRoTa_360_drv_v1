@@ -47,8 +47,9 @@ void setup() {
     displayMessage("Connecting", "WiFi...");
     initWiFi();
     
-    // Note: UDP Discovery is disabled. ALPACA API available at http://<IP>/api/v1/rotator/0/
-    Serial.println("UDP Discovery disabled - use web interface or direct ALPACA API");
+    // Initialize ALPACA UDP Discovery for auto-detection by ASCOM clients
+    Serial.println("Initializing ALPACA discovery...");
+    initDiscovery(ALPACA_PORT);
     
     // Setup web server endpoints
     Serial.println("Setting up web server endpoints...");
@@ -85,10 +86,11 @@ void loop() {
     // Update OLED display
     updateDisplay();
     
-    // Process DNS requests (for captive portal)
+    // Process DNS requests (only in AP mode - captive portal)
     processDNS();
     
-    // Note: handleDiscovery() removed to eliminate UDP errors
+    // Handle ALPACA discovery packets (for ASCOM auto-detection)
+    handleDiscovery();
     
     // Small delay to prevent watchdog issues
     delay(1);

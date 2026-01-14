@@ -14,6 +14,7 @@ void resetServoAngleZero();
 void setZeroPointExact();
 void setZeroPointMode3();
 void setMiddle();
+void setCurrentTargetPosition(int steps);  // For Sync command
 
 // Control functions
 void stopServo();
@@ -32,6 +33,8 @@ int getServoCurrent();
 int getServoTemperature();
 int getServoMode();
 int getMotorID();
+void setReverseDirection(bool reverse);
+bool getReverseDirection();
 
 // Position management
 int getCurrentTargetPosition();

@@ -25,6 +25,7 @@ SMS_STS st;
 s16 activeServoSpeed = 400;
 s16 currentTargetPosition = 0;
 s16 virtualZeroOffset = 0;
+bool reverseDirection = false;  // Reverse rotation direction
 
 // Feedback variables
 s16 loadRead = 0;
@@ -230,6 +231,9 @@ int getServoTemperature() { return temperRead; }
 int getServoMode() { return modeRead; }
 int getMotorID() { return MOTOR_ID; }
 
+void setReverseDirection(bool reverse) { reverseDirection = reverse; }
+bool getReverseDirection() { return reverseDirection; }
+
 // ============================================================================
 // MOVEMENT FUNCTIONS
 // ============================================================================
@@ -259,7 +263,8 @@ void moveServoToAngle(double angleDeg) {
     while(angleDeg >= 360.0) angleDeg -= 360.0;
     while(angleDeg < 0.0) angleDeg += 360.0;
     
-    // For angles > 180°, use effective angle = abs(180 - angle)
+    // Gear range is 0-180° (one full motor rotation)
+    // For angles > 180°, map to equivalent angle in 0-180° range
     double effectiveAngle = angleDeg;
     if(angleDeg > 180.0) {
         effectiveAngle = abs(180.0 - angleDeg);
@@ -272,14 +277,27 @@ void moveServoToAngle(double angleDeg) {
     // Calculate relative delta
     s16 relativeDelta = targetSteps - currentTargetPosition;
     
+    // Reverse: Invert movement direction (change sign of delta)
+    // Example: 45° normally → +delta, Reverse ON → -delta
+    if(reverseDirection) {
+        relativeDelta = -relativeDelta;
+    }
+    
     Serial.print("Move to ");
     Serial.print(angleDeg);
-    Serial.print("° gear (");
+    Serial.print("° gear");
+    if(reverseDirection) Serial.print(" [REV]");
+    Serial.print(" → effective: ");
+    Serial.print(effectiveAngle);
+    Serial.print("°, motor: ");
     Serial.print(motorDegrees);
-    Serial.print("° motor, ");
+    Serial.print("°, steps: ");
     Serial.print(targetSteps);
-    Serial.print(" steps), delta=");
-    Serial.println(relativeDelta);
+    Serial.print(", current: ");
+    Serial.print(currentTargetPosition);
+    Serial.print(", delta: ");
+    Serial.print(relativeDelta);
+    Serial.println();
     
     st.WritePosEx(MOTOR_ID, relativeDelta, activeServoSpeed, SERVO_INIT_ACC);
     currentTargetPosition = targetSteps;
@@ -316,6 +334,14 @@ void setMiddle() {
     Serial.println("Current position set to 90° (middle)");
 }
 
+void setCurrentTargetPosition(int steps) {
+    // Update current position without moving (used by Sync)
+    currentTargetPosition = steps;
+    Serial.print("Position synced to ");
+    Serial.print(steps);
+    Serial.println(" steps");
+}
+
 void setZeroPointMode3() {
     // In Motor-Mode (3): Do NOT switch modes!
     // Simply set virtual position to 0
@@ -349,13 +375,19 @@ void servoTorque(bool enable) {
 }
 
 void setActiveSpeed(int speed) {
+    // Clamp speed between reasonable limits
+    // Minimum: 100 (very slow but still moves)
+    // Maximum: SERVO_MAX_SPEED (4000)
+    if(speed < 100) {
+        speed = 100;
+    }
+    if(speed > SERVO_MAX_SPEED) {
+        speed = SERVO_MAX_SPEED;
+    }
     activeServoSpeed = speed;
-    if(activeServoSpeed > SERVO_MAX_SPEED) {
-        activeServoSpeed = SERVO_MAX_SPEED;
-    }
-    if(activeServoSpeed < 0) {
-        activeServoSpeed = 0;
-    }
+    
+    Serial.print("Speed set to: ");
+    Serial.println(activeServoSpeed);
 }
 
 int getActiveSpeed() {

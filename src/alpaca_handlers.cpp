@@ -2,6 +2,11 @@
 #include "servo_control.h"
 #include <WiFiUdp.h>
 
+// Constants for Sync calculation (same as in servo_control.cpp)
+#define GEAR_RATIO 2.0
+#define SERVO_STEPS 4096.0
+#define SERVO_ANGLE_RANGE 360.0
+
 // Device status
 static bool isConnected = false;
 static bool reverseState = false;
@@ -24,9 +29,9 @@ void initDiscovery(int alpacaPort) {
     if(WiFi.status() == WL_CONNECTED) {
         udp.beginMulticast(multicastAddress, udpPort);
         udpInitialized = true;
-        Serial.println("UDP Discovery initialized");
+        Serial.println("UDP Discovery initialized on port 32227");
     } else {
-        Serial.println("WARNING: WiFi not connected, UDP Discovery will start when WiFi is ready");
+        Serial.println("UDP Discovery will start when WiFi connects");
         udpInitialized = false;
     }
 }
@@ -95,7 +100,7 @@ void sendJSONResponse(AsyncWebServerRequest *request, JsonDocument &doc, int err
 // ============================================================================
 
 void handleDiscovery() {
-    // Only handle discovery if WiFi is connected
+    // Only handle discovery if WiFi is connected in STA mode
     if(WiFi.status() != WL_CONNECTED) {
         udpInitialized = false;
         return;
@@ -105,12 +110,12 @@ void handleDiscovery() {
     if(!udpInitialized) {
         udp.beginMulticast(multicastAddress, udpPort);
         udpInitialized = true;
-        Serial.println("UDP Discovery re-initialized after WiFi connect");
+        Serial.println("UDP Discovery initialized after WiFi connect");
     }
     
     int packetSize = udp.parsePacket();
     if (packetSize) {
-        Serial.print("Discovery packet received: size=");
+        Serial.print("ALPACA Discovery packet received: size=");
         Serial.println(packetSize);
 
         int len = udp.read(packetBuffer, 255);
@@ -130,7 +135,7 @@ void handleDiscovery() {
         udp.write((uint8_t *)response, strlen(response));
         udp.endPacket();
 
-        Serial.println("Discovery response sent");
+        Serial.println("ALPACA Discovery response sent");
     }
 }
 
@@ -360,7 +365,20 @@ void handleMoveMechanical(AsyncWebServerRequest *request) {
 void handleSync(AsyncWebServerRequest *request) {
     JsonDocument doc;
     double value = request->arg("Position").toDouble();
-    // Set the current rotator position to the specified value without moving
-    setZeroPointExact();
+    
+    // Sync: Set virtual position to specified angle without moving motor
+    // Convert gear angle to motor steps
+    double motorDegrees = value * GEAR_RATIO;  // GEAR_RATIO = 2.0
+    int targetSteps = (int)((motorDegrees / 360.0) * 4096.0);
+    
+    // Update current position to synced value
+    setCurrentTargetPosition(targetSteps);
+    
+    Serial.print("Synced to ");
+    Serial.print(value);
+    Serial.print("° (steps: ");
+    Serial.print(targetSteps);
+    Serial.println(")");
+    
     sendJSONResponse(request, doc, 0);
 }
