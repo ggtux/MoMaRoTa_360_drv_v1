@@ -37,6 +37,14 @@ Servo-Motor-Steuerung (optimiert aus parkplatz/CONNECT.h):
 - Feedback und Status: `getFeedback()`, `isServoMoving()`, `getServoAngle()`
 - Geschwindigkeits-Management: `setActiveSpeed()`, `getActiveSpeed()`
 
+#### `include/display_control.h` & `src/display_control.cpp`
+OLED Display-Steuerung (optimiert aus parkplatz/BOARD_DEV.h):
+- SSD1306 128x32 OLED Display (I2C 0x3C)
+- Auto-Update alle 300ms mit Motor-Informationen
+- Anzeige: Titel, Motor-ID, Mode, Position, IP-Adresse
+- Display On/Off Steuerung via Web-Interface
+- Status-Nachrichten während Initialisierung
+
 ## Wichtige Features
 
 ### Gear Ratio Berechnung
@@ -102,6 +110,7 @@ Die neue Struktur trennt klar zwischen:
 - **Mikrocontroller**: ESP32
 - **Servo**: Feetech ST3215 (Mode 3 - Motor Mode)
 - **Communication**: UART (Serial1, RX=18, TX=19, 1MBaud)
+- **Display**: SSD1306 OLED 128x32 (I2C 0x3C, SDA=21, SCL=22)
 - **Gear Ratio**: 1:2
 
 ## Abhängigkeiten
@@ -112,6 +121,8 @@ Die neue Struktur trennt klar zwischen:
 - Preferences (ESP32)
 - ArduinoJson
 - SMS_STS (Servo-Bibliothek)
+- Adafruit_SSD1306 (OLED Display)
+- Adafruit_GFX (Graphics Library)
 
 ## Version
 

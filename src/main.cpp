@@ -10,6 +10,7 @@
 #include "servo_control.h"
 #include "wifi_manager.h"
 #include "alpaca_handlers.h"
+#include "display_control.h"
 
 // ============================================================================
 // CONFIGURATION
@@ -31,12 +32,18 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n\n=== MoMa Rotator - ALPACA Driver ===");
     
+    // Initialize OLED Display
+    Serial.println("Initializing OLED display...");
+    initDisplay();
+    
     // Initialize servo motor
     Serial.println("Initializing servo...");
+    displayMessage("Initializing", "Servo...");
     initServo();
     
     // Initialize WiFi
     Serial.println("Initializing WiFi...");
+    displayMessage("Connecting", "WiFi...");
     initWiFi();
     
     // Initialize ALPACA discovery
@@ -61,7 +68,14 @@ void setup() {
     Serial.print("IP: ");
     Serial.println(getIPAddress());
     Serial.println("Ready for ALPACA connections");
-}
+    
+    // Show ready message
+    displayMessage("MoMa Rotator", "Ready!", getIPAddress().c_str());
+    delay(2000);
+}Update OLED display
+    updateDisplay();
+    
+    // 
 
 // ============================================================================
 // MAIN LOOP

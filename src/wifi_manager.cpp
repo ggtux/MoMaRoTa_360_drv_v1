@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "servo_control.h"
+#include "display_control.h"
 
 // Access Point configuration
 const char *apSSID = "MoMaRoTa";
@@ -130,6 +131,12 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
                 break;
             case 18: // Set zero
                 setZeroPointExact();
+                break;
+            case 20: // Display OFF
+                displayOff();
+                break;
+            case 21: // Display ON
+                displayOn();
                 break;
         }
         request->send(200, "text/plain", "OK");

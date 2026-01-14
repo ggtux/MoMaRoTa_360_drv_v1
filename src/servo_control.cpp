@@ -75,14 +75,25 @@ void initServo() {
     Serial.print(", Max Angle: ");
     Serial.println(maxAngle);
     
-    // Set Motor-Mode (3)
-    Serial.println("Setting Motor-Mode (3)...");
+    // Set Motor-Mode (3) - ONLY MODE SUPPORTED
+    Serial.println("Setting Motor-Mode (3) - locked permanently...");
     setMode(3);
     delay(100);
     
+    // Verify mode
+    modeRead = st.ReadMode(MOTOR_ID);
+    Serial.print("Current Mode: ");
+    Serial.println(modeRead);
+    
+    if(modeRead != 3) {
+        Serial.println("WARNING: Mode is not 3! Retrying...");
+        setMode(3);
+        delay(100);
+    }
+    
     // Start at virtual position 0
     currentTargetPosition = 0;
-    Serial.println("Motor-Mode initialized at virtual position 0");
+    Serial.println("Motor-Mode (3) initialized - virtual position set to 0°");
 }
 
 // ============================================================================
@@ -90,18 +101,20 @@ void initServo() {
 // ============================================================================
 
 void setMode(int mode) {
-    if(mode == 0) {
-        st.unLockEprom(MOTOR_ID);
-        st.writeWord(MOTOR_ID, 11, 4095);
-        st.writeByte(MOTOR_ID, SMS_STS_MODE, mode);
-        st.LockEprom(MOTOR_ID);
+    // This driver ONLY supports Motor-Mode (Mode 3)
+    if(mode != 3) {
+        Serial.println("ERROR: Only Motor-Mode (3) is supported!");
+        Serial.println("Forcing Mode 3...");
+        mode = 3;
     }
-    else if(mode == 3) {
-        st.unLockEprom(MOTOR_ID);
-        st.writeByte(MOTOR_ID, SMS_STS_MODE, mode);
-        st.writeWord(MOTOR_ID, 11, 0);
-        st.LockEprom(MOTOR_ID);
-    }
+    
+    st.unLockEprom(MOTOR_ID);
+    st.writeByte(MOTOR_ID, SMS_STS_MODE, 3);
+    st.writeWord(MOTOR_ID, 11, 0);  // Max angle = 0 for motor mode
+    st.LockEprom(MOTOR_ID);
+    delay(50);
+    
+    Serial.println("Motor-Mode (3) set and locked");
 }
 
 // ============================================================================
@@ -238,29 +251,19 @@ double getServoAngle() {
 // ============================================================================
 
 void setMiddle() {
-    st.CalibrationOfs(MOTOR_ID);
+    // In Motor-Mode (3): Set current position as middle (90°)
+    // Calculate steps for 90° gear position: 90° * 2 (gear ratio) / 360° * 4096 steps = 2048
+    Serial.println("Setting current position as middle (90°)...");
+    currentTargetPosition = 2048; // 90° on gear
+    Serial.println("Current position set to 90° (middle)");
 }
 
 void setZeroPointMode3() {
-    if(modeRead == 3) {
-        Serial.println("Setting zero point in motor mode...");
-        
-        // Switch to Mode 0 for calibration
-        setMode(0);
-        delay(100);
-        
-        // Set current position as zero
-        st.CalibrationOfs(MOTOR_ID);
-        delay(100);
-        
-        // Back to Mode 3
-        setMode(3);
-        delay(100);
-        
-        Serial.println("Zero point set successfully");
-    } else {
-        Serial.println("Warning: Not in motor mode");
-    }
+    // In Motor-Mode (3): Do NOT switch modes!
+    // Simply set virtual position to 0
+    Serial.println("Setting zero point in motor mode (virtual)...");
+    currentTargetPosition = 0;
+    Serial.println("Virtual zero point set successfully");
 }
 
 void setZeroPointExact() {

@@ -12,6 +12,7 @@
 ├── include/                          # Header-Dateien
 │   ├── alpaca_handlers.h            # ✨ NEU: ALPACA API Endpunkte
 │   ├── wifi_manager.h               # ✨ NEU: WiFi & Setup Verwaltung
+│   ├── display_control.h            # ✨ NEU: OLED Display Steuerung
 │   ├── servo_control.h              # Servo-Steuerung
 │   ├── SMS_STS.h                    # Servo-Bibliothek
 │   ├── SCS.h                        # Servo Communication
@@ -23,10 +24,11 @@
 │   └── PreferencesConfig.h          # Preferences Config
 │
 ├── src/                             # Source-Dateien
-│   ├── main.cpp                     # 🔥 HAUPTPROGRAMM (79 Zeilen!)
+│   ├── main.cpp                     # 🔥 HAUPTPROGRAMM (95 Zeilen!)
 │   ├── main.cpp.backup              # 💾 Backup (630 Zeilen alt)
 │   ├── alpaca_handlers.cpp          # ✨ NEU: ALPACA Implementierung
 │   ├── wifi_manager.cpp             # ✨ NEU: WiFi Implementierung
+│   ├── display_control.cpp          # ✨ NEU: OLED Display Implementierung
 │   ├── servo_control.cpp            # Servo Implementierung
 │   ├── SMS_STS.cpp                  # Servo-Bibliothek
 │   ├── SCS.cpp                      # Servo Communication
@@ -35,7 +37,7 @@
 │
 ├── parkplatz/                       # 🗄️ Referenz-Code (nicht kompiliert)
 │   ├── CONNECT.h                    # Basis für wifi_manager
-│   ├── WEBPAGE.h                    # Basis für Control Panel
+│   ├── WEBPAGE.h                    # Basis für display_controlPanel
 │   ├── BOARD_DEV.h                  # Display-Funktionen
 │   ├── RGB_CTRL.h                   # RGB LED Steuerung
 │   └── INST.h                       # Instruktionen
@@ -127,18 +129,20 @@ alpaca_handlers.cpp
 
 | Modul              | Dateien | Zeilen  | Verantwortung                    |
 |--------------------|---------|---------|----------------------------------|
-| main.cpp           | 1       | 79      | Setup & Loop                     |
+| main.cpp           | 1       | 95      | Setup & Loop                     |
 | alpaca_handlers    | 2       | ~380    | ALPACA Protocol                  |
-| wifi_manager       | 2       | ~280    | WiFi & Web Interface             |
+| wifi_manager       | 2       | ~340    | WiFi & Web Interface             |
 | servo_control      | 2       | ~340    | Servo Hardware Control           |
+| display_control    | 2       | ~120    | OLED Display                     |
 | SMS_STS (Lib)      | 8       | ~1500   | Servo Communication Library      |
-| **GESAMT**         | **15**  | **2579**| **Vollständiger ALPACA Driver**  |
+| **GESAMT**         | **17**  | **2775**| **Vollständiger ALPACA Driver**  |
 
 ## Workflow
 
 ### 1️⃣ Startup
 ```
 ESP32 Boot
+    Display()        → OLED Display initialisieren
     ↓
 initServo()          → Servo im Mode 3 konfigurieren
     ↓
@@ -150,11 +154,13 @@ setupEndpoints()     → Alle Web-Routes registrieren
     ↓
 server.begin()       → Webserver starten
     ↓
+READY ✓              → Display zeigt "Ready!" + IP
 READY ✓
 ```
 
 ### 2️⃣ Runtime Loop
-```
+```updateDisplay()    → OLED Display aktualisieren
+    
 loop() {
     getFeedback()      → Servo Position/Status lesen
     processDNS()       → Captive Portal DNS
@@ -204,7 +210,14 @@ servo_control.cpp → st.WritePosEx(...)
 ### 🎨 WEBPAGE.h → wifi_manager.cpp
 - ✅ Optimiertes HTML/CSS Design
 - ✅ JavaScript für Goto-Steuerung
-- ✅ Auto-Refresh Position Display
+- ✅ 🖥️ BOARD_DEV.h → display_control.cpp
+- ✅ OLED SSD1306 Display Support
+- ✅ Auto-Update alle 300ms
+- ✅ Status-Anzeige (Titel, Mode, Position, IP)
+- ✅ Display On/Off Steuerung (Case 20/21)
+- ✅ Startup-Nachrichten
+
+### Auto-Refresh Position Display
 - ✅ Responsive Layout
 
 ### ⚙️ Servo-Funktionen → servo_control.cpp
