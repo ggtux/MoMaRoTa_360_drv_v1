@@ -327,14 +327,6 @@ double getServoAngle() {
 // ZERO POINT & CALIBRATION
 // ============================================================================
 
-void setMiddle() {
-    // In Motor-Mode (3): Set current position as middle (90°)
-    // Calculate steps for 90° gear position: 90° * 2 (gear ratio) / 360° * 4096 steps = 2048
-    Serial.println("Setting current position as middle (90°)...");
-    currentTargetPosition = 2048; // 90° on gear
-    Serial.println("Current position set to 90° (middle)");
-}
-
 void setCurrentTargetPosition(int steps) {
     // Update current position without moving (used by Sync)
     currentTargetPosition = steps;
@@ -369,6 +361,14 @@ void resetServoAngleZero() {
 // ============================================================================
 
 void stopServo() {
+    // Get current feedback before stopping
+    getFeedback();
+    
+    // Correct absolutePosition to actual current position
+    // posRead shows remaining distance to target
+    // So actual position = target - remaining = absolutePosition - posRead
+    absolutePosition = absolutePosition - posRead;
+    
     st.EnableTorque(MOTOR_ID, 0);
     delay(10);
     st.EnableTorque(MOTOR_ID, 1);

@@ -13,7 +13,6 @@ void gotoPosition(int targetPosition, int currentPos);
 void resetServoAngleZero();
 void setZeroPointExact();
 void setZeroPointMode3();
-void setMiddle();
 void setCurrentTargetPosition(int steps);  // For Sync command
 
 // Control functions

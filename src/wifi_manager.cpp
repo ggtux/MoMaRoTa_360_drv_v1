@@ -139,9 +139,6 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
             case 8:  // Speed -
                 setActiveSpeed(getActiveSpeed() - 100);
                 break;
-            case 11: // Set middle
-                setMiddle();
-                break;
             case 17: // Goto position
                 moveServoToAngle(cmdP);
                 break;
@@ -337,7 +334,6 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "<div class='divider'></div>";
     html += "<div class='section-title'>Sync Current Position as</div>";
     html += "<div class='section'>";
-    html += "<button class='button' onclick='cmd(1,11)'>Middle</button>";
     html += "<button class='button' onclick='cmd(1,18)'>Zero</button></div>";
     html += "<div class='section'><label>Speed:</label>";
     html += "<button class='button' onclick='cmd(1,7)'>+</button>";
