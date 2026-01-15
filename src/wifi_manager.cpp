@@ -306,8 +306,8 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += ".small-label{font-size:0.85rem;color:#ddd;margin:2px 0 8px;text-align:center}";
     html += ".output-field{font-size:1.3rem;background:#e3a71d;padding:12px;border-radius:5px;text-align:center;border:1px solid #870b0b;min-width:100px;margin-bottom:4px}";
     html += "input[type='number']{width:120px;height:28px;font-size:1.1rem;padding:4px 8px;border-radius:4px;border:2px solid #e3eae3;background:rgb(55,137,75);color:#ededed;text-align:center}";
-    html += ".button{margin:4px;padding:8px 16px;border:0;cursor:pointer;background:#4247b7;color:#fff;border-radius:6px;font-size:1.1rem;min-width:90px}";
-    html += ".button-stop{margin:4px;padding:8px 16px;border:0;cursor:pointer;background:#b74242;color:#fff;border-radius:6px;font-size:1.1rem}";
+    html += ".button{margin:4px;padding:6px 12px;border:0;cursor:pointer;background:#4247b7;color:#fff;border-radius:6px;font-size:0.95rem;min-width:70px}";
+    html += ".button-stop{margin:4px;padding:6px 12px;border:0;cursor:pointer;background:#b74242;color:#fff;border-radius:6px;font-size:0.95rem;min-width:70px}";
     html += ".button:hover{background:#ff494d}";
     html += ".divider{border-top:2px solid #555;margin:20px 0;width:100%}";
     html += ".section-title{text-align:center;font-size:1.2rem;margin:15px 0 10px;color:#fdc100}";
@@ -318,12 +318,12 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "<label>Position in &deg;</label>";
     html += "<div class='output-field' id='virtual-pos'>0.0</div></div>";
     html += "<div style='display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px'>";
-    html += "<input type='number' id='posInput' min='0' max='359.99' step='0.01' value='0'>";
+    html += "<input type='number' id='posInput' min='-360' max='360' step='0.1' value='0'>";
     html += "<button class='button' onclick='gotoTarget()'>Goto</button></div>";
     html += "<div class='centered' style='gap:8px'><label style='font-size:0.95rem'>Reverse:</label>";
     html += "<input type='checkbox' id='reverseCheckbox' onchange='toggleReverse()' style='width:auto;height:18px'>";
     html += "</div>";
-    html += "<div class='small-label'>(0 .. 359.99&deg;)</div>";
+    html += "<div class='small-label'>(-360 .. +360&deg;)</div>";
     html += "<div class='divider'></div>";
     html += "<div class='section-title'>Goto Position ...</div>";
     html += "<div class='section'>";
@@ -331,6 +331,9 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "<button class='button' onclick='cmd(1,6)'>0&deg;</button>";
     html += "<button class='button' onclick='cmd(1,1)'>90&deg;</button>";
     html += "<button class='button' onclick='cmd(1,5)'>180&deg;</button></div>";
+    html += "<div class='section'>";
+    html += "<button class='button' onclick='moveToAngle(270)'>270&deg;</button>";
+    html += "<button class='button' onclick='moveToAngle(360)'>360&deg;</button></div>";
     html += "<div class='divider'></div>";
     html += "<div class='section-title'>Sync Current Position as</div>";
     html += "<div class='section'>";
@@ -339,6 +342,10 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "<div class='section'><label>Speed:</label>";
     html += "<button class='button' onclick='cmd(1,7)'>+</button>";
     html += "<button class='button' onclick='cmd(1,8)'>-</button></div>";
+    html += "<div class='divider'></div>";
+    html += "<div class='centered' style='gap:8px'><label style='font-size:0.95rem'>Display:</label>";
+    html += "<button class='button' onclick='cmd(1,21)' style='min-width:50px'>ON</button>";
+    html += "<button class='button' onclick='cmd(1,20)' style='min-width:50px'>OFF</button></div>";
     html += "<div class='output-line' id='ip'>--.--.--.--</div>";
     html += "<script>";
     html += "function cmd(t,i,a=0,b=0,p=0,d=0){";
@@ -347,8 +354,9 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += "x.send();}";
     html += "function gotoTarget(){";
     html += "var val=parseFloat(document.getElementById('posInput').value);";
-    html += "if(isNaN(val)||val<0||val>359.99){alert('Value 0-359.99');return;}";
+    html += "if(isNaN(val)||val<-360||val>360){alert('Value -360 to +360');return;}";
     html += "cmd(1,17,0,0,val,0);}";
+    html += "function moveToAngle(angle){cmd(1,17,0,0,angle,0);}";
     html += "function getData(){";
     html += "var x=new XMLHttpRequest();";
     html += "x.onreadystatechange=function(){";

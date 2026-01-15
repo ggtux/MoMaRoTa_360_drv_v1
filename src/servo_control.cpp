@@ -308,9 +308,11 @@ void moveServoByAngle(double deltaDeg) {
 }
 
 double getServoAngle() {
-    // Convert current target position back to gear degrees
-    // steps -> motor degrees -> gear degrees
-    double motorDegrees = (currentTargetPosition / SERVO_STEPS) * SERVO_ANGLE_RANGE;
+    // Get current actual position from motor feedback
+    getFeedback();
+    
+    // Use actual position (posRead) instead of target position
+    double motorDegrees = (posRead / SERVO_STEPS) * SERVO_ANGLE_RANGE;
     double gearDegrees = motorDegrees / GEAR_RATIO;
     
     // Handle angles > 180°
