@@ -26,6 +26,8 @@ s16 activeServoSpeed = 400;
 s16 currentTargetPosition = 0;
 s16 virtualZeroOffset = 0;
 bool reverseDirection = false;  // Reverse rotation direction
+s16 absolutePosition = 0;  // Absolute accumulated position for display
+s16 lastPosRead = 0;  // Last posRead value for delta calculation
 
 // Feedback variables
 s16 loadRead = 0;
@@ -138,12 +140,12 @@ void initServo() {
         delay(100);
     }
     
-    // Start at virtual position 0
-    currentTargetPosition = 0;
-    Serial.println("Motor-Mode (3) initialized - virtual position set to 0°");
-    
-    // Update feedback to read all values including mode
+    // Read current motor position and set as initial position
     getFeedback();
+    currentTargetPosition = 0;
+    absolutePosition = 0;
+    lastPosRead = 0;
+    Serial.println("Motor-Mode (3) initialized - position set to 0°");
 }
 
 // ============================================================================
@@ -252,52 +254,46 @@ void gotoPosition(int targetPosition, int currentPos) {
     st.WritePosEx(MOTOR_ID, relativeDelta, activeServoSpeed, SERVO_INIT_ACC);
     
     currentTargetPosition = targetPosition;
+    absolutePosition += relativeDelta;  // Update absolute position
 }
 
 void moveServoToAngle(double angleDeg) {
-    // Convert gear degrees to motor steps
-    // Gear ratio 1:2 means 360° gear = 720° motor = 8192 steps (2 full rotations)
-    // Formula: motorSteps = (gearDegrees * GEAR_RATIO / 360.0) * SERVO_STEPS
+    // Get current angle
+    double currentAngle = getServoAngle();
     
-    // Wrap angle to 0-359.99
+    // Wrap target angle to 0-359.99
     while(angleDeg >= 360.0) angleDeg -= 360.0;
     while(angleDeg < 0.0) angleDeg += 360.0;
     
-    // Full gear range is 0-360° (two full motor rotations = 720° motor)
-    // Direct mapping without restrictions
-    double effectiveAngle = angleDeg;
+    // Calculate shortest path delta in degrees
+    double deltaDeg = angleDeg - currentAngle;
     
-    // Calculate motor degrees and steps
-    double motorDegrees = effectiveAngle * GEAR_RATIO;
-    int targetSteps = (int)((motorDegrees / SERVO_ANGLE_RANGE) * SERVO_STEPS);
+    // Normalize delta to shortest path (-180 to +180)
+    while(deltaDeg > 180.0) deltaDeg -= 360.0;
+    while(deltaDeg < -180.0) deltaDeg += 360.0;
     
-    // Calculate relative delta
-    s16 relativeDelta = targetSteps - currentTargetPosition;
+    // Convert delta degrees to motor steps
+    double motorDegrees = deltaDeg * GEAR_RATIO;
+    s16 logicalDelta = (s16)((motorDegrees / SERVO_ANGLE_RANGE) * SERVO_STEPS);
     
-    // Reverse: Invert movement direction (change sign of delta)
-    // Example: 45° normally → +delta, Reverse ON → -delta
-    if(reverseDirection) {
-        relativeDelta = -relativeDelta;
-    }
+    // Reverse: Invert movement direction for motor command only
+    s16 motorDelta = reverseDirection ? -logicalDelta : logicalDelta;
     
     Serial.print("Move to ");
     Serial.print(angleDeg);
-    Serial.print("° gear");
+    Serial.print("° from ");
+    Serial.print(currentAngle);
+    Serial.print("°");
     if(reverseDirection) Serial.print(" [REV]");
-    Serial.print(" → effective: ");
-    Serial.print(effectiveAngle);
-    Serial.print("°, motor: ");
-    Serial.print(motorDegrees);
-    Serial.print("°, steps: ");
-    Serial.print(targetSteps);
-    Serial.print(", current: ");
-    Serial.print(currentTargetPosition);
-    Serial.print(", delta: ");
-    Serial.print(relativeDelta);
-    Serial.println();
+    Serial.print(" → delta: ");
+    Serial.print(deltaDeg);
+    Serial.print("° (");
+    Serial.print(motorDelta);
+    Serial.println(" steps)");
     
-    st.WritePosEx(MOTOR_ID, relativeDelta, activeServoSpeed, SERVO_INIT_ACC);
-    currentTargetPosition = targetSteps;
+    st.WritePosEx(MOTOR_ID, motorDelta, activeServoSpeed, SERVO_INIT_ACC);
+    currentTargetPosition += motorDelta;
+    absolutePosition += logicalDelta;  // Always use logical delta for position tracking
 }
 
 void moveServoByAngle(double deltaDeg) {
@@ -305,18 +301,24 @@ void moveServoByAngle(double deltaDeg) {
     double currentAngle = getServoAngle();
     double targetAngle = currentAngle + deltaDeg;
     moveServoToAngle(targetAngle);
+    // absolutePosition is already updated in moveServoToAngle
 }
 
 double getServoAngle() {
-    // Get current actual position from motor feedback
+    // Get live position during movement
     getFeedback();
     
-    // Use actual position (posRead) instead of target position
-    double motorDegrees = (posRead / SERVO_STEPS) * SERVO_ANGLE_RANGE;
+    // In Motor-Mode 3, posRead shows remaining distance to target
+    // Calculate actual position: absolutePosition - posRead
+    s16 currentPos = absolutePosition - posRead;
+    
+    // Convert to gear degrees
+    double motorDegrees = (currentPos / SERVO_STEPS) * SERVO_ANGLE_RANGE;
     double gearDegrees = motorDegrees / GEAR_RATIO;
     
-    // Handle angles > 180°
-    if(gearDegrees < 0) gearDegrees = 360.0 + gearDegrees;
+    // Wrap to 0-360° range
+    while(gearDegrees >= 360.0) gearDegrees -= 360.0;
+    while(gearDegrees < 0.0) gearDegrees += 360.0;
     
     return gearDegrees;
 }
@@ -336,6 +338,7 @@ void setMiddle() {
 void setCurrentTargetPosition(int steps) {
     // Update current position without moving (used by Sync)
     currentTargetPosition = steps;
+    absolutePosition = steps;  // Also update absolutePosition for display
     Serial.print("Position synced to ");
     Serial.print(steps);
     Serial.println(" steps");
@@ -346,12 +349,14 @@ void setZeroPointMode3() {
     // Simply set virtual position to 0
     Serial.println("Setting zero point in motor mode (virtual)...");
     currentTargetPosition = 0;
+    absolutePosition = 0;
     Serial.println("Virtual zero point set successfully");
 }
 
 void setZeroPointExact() {
     Serial.println("Setting current position as zero point...");
     currentTargetPosition = 0;
+    absolutePosition = 0;
     Serial.println("Current position set to 0° (zero point)");
 }
 
