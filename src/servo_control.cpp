@@ -256,19 +256,16 @@ void gotoPosition(int targetPosition, int currentPos) {
 
 void moveServoToAngle(double angleDeg) {
     // Convert gear degrees to motor steps
-    // Gear ratio 1:2 means 180° gear = 360° motor = 4096 steps
+    // Gear ratio 1:2 means 360° gear = 720° motor = 8192 steps (2 full rotations)
     // Formula: motorSteps = (gearDegrees * GEAR_RATIO / 360.0) * SERVO_STEPS
     
     // Wrap angle to 0-359.99
     while(angleDeg >= 360.0) angleDeg -= 360.0;
     while(angleDeg < 0.0) angleDeg += 360.0;
     
-    // Gear range is 0-180° (one full motor rotation)
-    // For angles > 180°, map to equivalent angle in 0-180° range
+    // Full gear range is 0-360° (two full motor rotations = 720° motor)
+    // Direct mapping without restrictions
     double effectiveAngle = angleDeg;
-    if(angleDeg > 180.0) {
-        effectiveAngle = abs(180.0 - angleDeg);
-    }
     
     // Calculate motor degrees and steps
     double motorDegrees = effectiveAngle * GEAR_RATIO;
