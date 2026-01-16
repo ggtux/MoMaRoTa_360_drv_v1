@@ -17,40 +17,47 @@ void initWiFi() {
 }
 
 void connectWiFi() {
-    preferences.begin("wifi_config", false);
-    String ssid = "";
-    String password = "";
-
-    if (preferences.isKey("ssid")) {
-        ssid = preferences.getString("ssid", "");
-    }
-    if (preferences.isKey("password")) {
-        password = preferences.getString("password", "");
-    }
-    preferences.end();
-
-    if (ssid.length() > 0 && password.length() > 0) {
-        Serial.println("Connecting to saved WiFi: " + ssid);
-        WiFi.begin(ssid.c_str(), password.c_str());
-        
-        int attempts = 20;
-        while (WiFi.status() != WL_CONNECTED && attempts > 0) {
-            delay(500);
-            Serial.print(".");
-            attempts--;
+    // TEST: Fixed WiFi credentials
+    String ssid = "FiegeosNetz";
+    String password = "Manuelnoir1";
+    
+    // Disconnect and clear previous config
+    WiFi.disconnect(true);
+    delay(1000);
+    
+    // Set WiFi mode to station
+    WiFi.mode(WIFI_STA);
+    
+    Serial.println("Connecting to WiFi: " + ssid);
+    Serial.print("MAC Address: ");
+    Serial.println(WiFi.macAddress());
+    
+    WiFi.begin(ssid.c_str(), password.c_str());
+    
+    int attempts = 60;  // Increased to 30 seconds
+    while (WiFi.status() != WL_CONNECTED && attempts > 0) {
+        delay(500);
+        Serial.print(".");
+        if (attempts % 10 == 0) {
+            Serial.print(" [Status: ");
+            Serial.print(WiFi.status());
+            Serial.print("] ");
         }
+        attempts--;
+    }
 
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("\nWiFi connected!");
-            Serial.print("IP address: ");
-            Serial.println(WiFi.localIP());
-        } else {
-            Serial.println("\nConnection failed!");
-            Serial.print("WiFi status: ");
-            Serial.println(WiFi.status());
-        }
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nWiFi connected!");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+        Serial.print("Signal strength (RSSI): ");
+        Serial.print(WiFi.RSSI());
+        Serial.println(" dBm");
     } else {
-        Serial.println("No WiFi credentials saved.");
+        Serial.println("\nConnection failed!");
+        Serial.print("WiFi status: ");
+        Serial.println(WiFi.status());
+        Serial.println("Status codes: 0=IDLE, 1=NO_SSID, 3=CONNECTED, 4=FAILED, 5=LOST, 6=DISCONNECTED");
     }
 
     // Start Access Point if connection failed
@@ -101,6 +108,67 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
     server.on("/setup/v1/rotator/0/save", HTTP_POST, handleSaveWifi);
     server.on("/setup/v1/rotator/0/configdevices", HTTP_GET, handleConfigDevices);
     server.on("/reset", HTTP_GET, handleResetWifi);
+    
+    // Endpoint to retrieve stored WiFi credentials (JSON format)
+    server.on("/wifi/credentials", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Preferences preferences;
+        preferences.begin("wifi_config", true);
+        String ssid = preferences.getString("ssid", "");
+        String password = preferences.getString("password", "");
+        preferences.end();
+        
+        String json = "{";
+        json += "\"ssid\":\"" + ssid + "\",";
+        json += "\"password\":\"" + password + "\"";
+        json += "}";
+        
+        request->send(200, "application/json", json);
+    });
+    
+    // Endpoint to retrieve stored WiFi credentials (HTML format)
+    server.on("/wifi/info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Preferences preferences;
+        preferences.begin("wifi_config", true);
+        String ssid = preferences.getString("ssid", "");
+        String password = preferences.getString("password", "");
+        preferences.end();
+        
+        String html = "<!DOCTYPE html><html><head>";
+        html += "<meta charset='UTF-8'>";
+        html += "<title>WiFi Credentials</title>";
+        html += "<style>";
+        html += "body { font-family: Arial, sans-serif; margin: 40px; background: #f0f0f0; }";
+        html += ".container { background: white; padding: 30px; border-radius: 8px; max-width: 500px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
+        html += "h2 { color: #333; margin-top: 0; }";
+        html += ".credential { margin: 20px 0; padding: 15px; background: #f8f8f8; border-radius: 5px; }";
+        html += ".label { font-weight: bold; color: #666; margin-bottom: 5px; }";
+        html += ".value { font-family: monospace; color: #333; word-break: break-all; }";
+        html += ".empty { color: #999; font-style: italic; }";
+        html += "</style></head><body>";
+        html += "<div class='container'>";
+        html += "<h2>Gespeicherte WiFi Credentials</h2>";
+        html += "<div class='credential'>";
+        html += "<div class='label'>SSID (Netzwerkname):</div>";
+        html += "<div class='value'>";
+        if (ssid.length() > 0) {
+            html += ssid;
+        } else {
+            html += "<span class='empty'>(nicht gesetzt)</span>";
+        }
+        html += "</div></div>";
+        html += "<div class='credential'>";
+        html += "<div class='label'>Password:</div>";
+        html += "<div class='value'>";
+        if (password.length() > 0) {
+            html += password;
+        } else {
+            html += "<span class='empty'>(nicht gesetzt)</span>";
+        }
+        html += "</div></div>";
+        html += "</div></body></html>";
+        
+        request->send(200, "text/html; charset=UTF-8", html);
+    });
     
     // Position and status endpoints (needed by control panel JavaScript)
     server.on("/setup/v1/rotator/0/position", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -190,23 +258,24 @@ void handleCaptivePortal(AsyncWebServerRequest *request) {
 
 void handleSetupPage(AsyncWebServerRequest *request) {
     String html = "<!DOCTYPE html><html><head>";
-    html += "<meta charset='UTF-8'>";
-    html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+    html += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
+    html += "<title>MoMa Rotator Setup</title>";
     html += "<style>";
-    html += "body{font-family:Arial,sans-serif;text-align:center;background-color:#f4f4f4;padding:20px}";
-    html += "h2{color:#333}";
-    html += "form{background:white;max-width:400px;margin:auto;padding:20px;border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.1)}";
-    html += "button{background-color:#007BFF;color:white;border:none;padding:10px 20px;cursor:pointer;border-radius:5px;font-size:16px;margin:5px}";
-    html += "button:hover{background-color:#0056b3}";
-    html += ".btn-danger{background-color:#dc3545}";
-    html += ".btn-danger:hover{background-color:#c82333}";
+    html += "html{font-family:Arial;background:#181818;color:#ededed}";
+    html += "body{max-width:360px;margin:0 auto;padding:20px;background:rgb(27,90,76);border-radius:12px;box-shadow:0 0 8px #111}";
+    html += "h2{font-size:2rem;padding:20px 0 10px;margin:0;text-align:center}";
+    html += ".button{display:block;width:100%;margin:12px 0;padding:16px;border:0;cursor:pointer;background:#4247b7;color:#fff;border-radius:6px;font-size:1.1rem;text-align:center;text-decoration:none;box-sizing:border-box}";
+    html += ".button:hover{background:#5c61d4}";
+    html += ".btn-danger{background:#b74242}";
+    html += ".btn-danger:hover{background:#d45555}";
+    html += ".divider{border-top:2px solid #555;margin:20px 0;width:100%}";
     html += "</style>";
-    html += "<title>Rotator Setup</title>";
     html += "</head><body>";
     html += "<h2>MoMa Rotator Setup</h2>";
-    html += "<button onclick='location.href=\"/setup/v1/rotator/0/wifi\"'>WiFi Settings</button><br>";
-    html += "<button onclick='location.href=\"/setup/v1/rotator/0/configdevices\"'>Rotator Control</button><br>";
-    html += "<button class='btn-danger' onclick='if(confirm(\"Reset WiFi?\")) location.href=\"/reset\"'>Reset WiFi</button>";
+    html += "<a href='/setup/v1/rotator/0/wifi' class='button'>WiFi Settings</a>";
+    html += "<a href='/setup/v1/rotator/0/configdevices' class='button'>Rotator Control</a>";
+    html += "<div class='divider'></div>";
+    html += "<button class='button btn-danger' onclick='if(confirm(\"Reset WiFi configuration?\")) location.href=\"/reset\"'>Reset WiFi</button>";
     html += "</body></html>";
 
     AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", html);
@@ -217,18 +286,21 @@ void handleWifiSetupPage(AsyncWebServerRequest *request) {
     Serial.println("WiFi setup page requested");
 
     String html = "<!DOCTYPE html><html><head>";
-    html += "<meta charset='UTF-8'>";
-    html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-    html += "<style>";
-    html += "body{font-family:Arial,sans-serif;text-align:center;background-color:#f4f4f4;padding:20px}";
-    html += "h2{color:#333}";
-    html += "form{background:white;max-width:400px;margin:auto;padding:20px;border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.1)}";
-    html += "input,label{width:100%;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:5px;display:block;text-align:left}";
-    html += "input[type='submit']{background-color:#007BFF;color:white;border:none;cursor:pointer;text-align:center}";
-    html += "input[type='submit']:hover{background-color:#0056b3}";
-    html += "label{border:none;padding:5px 0;font-weight:bold}";
-    html += "</style>";
+    html += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
     html += "<title>WiFi Configuration</title>";
+    html += "<style>";
+    html += "html{font-family:Arial;background:#181818;color:#ededed}";
+    html += "body{max-width:360px;margin:0 auto;padding:20px;background:rgb(27,90,76);border-radius:12px;box-shadow:0 0 8px #111}";
+    html += "h2{font-size:2rem;padding:20px 0 10px;margin:0;text-align:center}";
+    html += "form{width:100%;box-sizing:border-box}";
+    html += "label{display:block;margin:15px 0 5px;font-size:1.1rem;color:#fdc100}";
+    html += "input[type='text'],input[type='password']{width:100%;padding:12px;margin:5px 0 15px;border:2px solid #e3eae3;border-radius:5px;background:rgb(55,137,75);color:#ededed;font-size:1rem;box-sizing:border-box}";
+    html += "input[type='text']::placeholder,input[type='password']::placeholder{color:#aaa}";
+    html += "input[type='submit']{display:block;width:100%;margin:20px 0 10px;padding:16px;border:0;cursor:pointer;background:#4247b7;color:#fff;border-radius:6px;font-size:1.1rem;text-align:center}";
+    html += "input[type='submit']:hover{background:#5c61d4}";
+    html += ".back-link{display:block;text-align:center;margin-top:20px;color:#fdc100;text-decoration:none}";
+    html += ".back-link:hover{color:#fff}";
+    html += "</style>";
     html += "</head><body>";
     html += "<h2>WiFi Configuration</h2>";
     html += "<form action='/setup/v1/rotator/0/save' method='POST'>";
@@ -238,6 +310,7 @@ void handleWifiSetupPage(AsyncWebServerRequest *request) {
     html += "<input type='password' name='password' placeholder='Enter password' required>";
     html += "<input type='submit' value='Save and Restart'>";
     html += "</form>";
+    html += "<a href='/setup/v1/rotator/0/setup' class='back-link'>&larr; Back to Setup</a>";
     html += "</body></html>";
 
     AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", html);
