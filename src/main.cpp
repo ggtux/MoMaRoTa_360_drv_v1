@@ -42,10 +42,10 @@ void setup() {
     displayMessage("Initializing", "Servo...");
     initServo();
     
-    // Initialize WiFi
+    // Initialize WiFi with WiFiConfigPortal
     Serial.println("Initializing WiFi...");
     displayMessage("Connecting", "WiFi...");
-    initWiFi();
+    initWiFi(server);  // Pass server to WiFi initialization
     
     // Initialize ALPACA UDP Discovery for auto-detection by ASCOM clients
     Serial.println("Initializing ALPACA discovery...");
@@ -53,8 +53,8 @@ void setup() {
     
     // Setup web server endpoints
     Serial.println("Setting up web server endpoints...");
-    setupWiFiEndpoints(server);
-    setupAlpacaEndpoints(server);
+    setupWiFiEndpoints(server);      // Setup WiFi and control endpoints
+    setupAlpacaEndpoints(server);    // Setup ALPACA API endpoints
     
     // 404 handler
     server.onNotFound([](AsyncWebServerRequest *request) {
@@ -85,6 +85,9 @@ void loop() {
     
     // Update OLED display
     updateDisplay();
+    
+    // Update WiFi portal (for periodic status messages)
+    updateWiFiPortal();
     
     // Process DNS requests (only in AP mode - captive portal)
     processDNS();

@@ -6,90 +6,48 @@
 const char *apSSID = "MoMaRoTa";
 IPAddress apIP(192, 168, 1, 1);
 static DNSServer dnsServer;
-static Preferences preferences;
+
+// WiFi Config Portal instance (global, will be initialized in initWiFi)
+static WiFiConfigPortal* wifiPortal = nullptr;
 
 // ============================================================================
 // WIFI INITIALIZATION & CONNECTION
 // ============================================================================
 
-void initWiFi() {
-    connectWiFi();
-}
-
-void connectWiFi() {
-    // TEST: Fixed WiFi credentials
-    String ssid = "FiegeosNetz";
-    String password = "Manuelnoir1";
+void initWiFi(AsyncWebServer &server) {
+    // Create WiFiConfigPortal instance
+    wifiPortal = new WiFiConfigPortal("MoMaRoTa", "12345678");
     
-    // Disconnect and clear previous config
-    WiFi.disconnect(true);
-    delay(1000);
+    // Start the portal with the existing server
+    wifiPortal->begin(server);
     
-    // Set WiFi mode to station
-    WiFi.mode(WIFI_STA);
-    
-    Serial.println("Connecting to WiFi: " + ssid);
-    Serial.print("MAC Address: ");
-    Serial.println(WiFi.macAddress());
-    
-    WiFi.begin(ssid.c_str(), password.c_str());
-    
-    int attempts = 60;  // Increased to 30 seconds
-    while (WiFi.status() != WL_CONNECTED && attempts > 0) {
-        delay(500);
-        Serial.print(".");
-        if (attempts % 10 == 0) {
-            Serial.print(" [Status: ");
-            Serial.print(WiFi.status());
-            Serial.print("] ");
-        }
-        attempts--;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi connected!");
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
-        Serial.print("Signal strength (RSSI): ");
-        Serial.print(WiFi.RSSI());
-        Serial.println(" dBm");
-    } else {
-        Serial.println("\nConnection failed!");
-        Serial.print("WiFi status: ");
-        Serial.println(WiFi.status());
-        Serial.println("Status codes: 0=IDLE, 1=NO_SSID, 3=CONNECTED, 4=FAILED, 5=LOST, 6=DISCONNECTED");
-    }
-
-    // Start Access Point if connection failed
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nStarting Access Point...");
-        WiFi.softAP(apSSID);
-        WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-        
-        // Start DNS server for captive portal
+    // If not connected after portal start, setup DNS for captive portal
+    if (!wifiPortal->isConnected()) {
+        Serial.println("Starting DNS server for captive portal...");
         dnsServer.start(53, "*", apIP);
-        
-        Serial.print("AP started: ");
-        Serial.println(apSSID);
-        Serial.print("AP IP: ");
-        Serial.println(WiFi.softAPIP());
     }
 }
 
 void processDNS() {
     // Only process DNS requests in AP mode (for captive portal)
-    // In STA mode (connected to home WiFi), DNS is not needed and causes UDP errors
     if(WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
         dnsServer.processNextRequest();
     }
 }
 
+void updateWiFiPortal() {
+    if (wifiPortal != nullptr) {
+        wifiPortal->loop();
+    }
+}
+
 String getIPAddress() {
-    if (WiFi.status() == WL_CONNECTED) {
-        return WiFi.localIP().toString();
-    } else {
+    if (wifiPortal != nullptr && wifiPortal->isConnected()) {
+        return wifiPortal->getLocalIP();
+    } else if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
         return WiFi.softAPIP().toString();
     }
+    return "0.0.0.0";
 }
 
 // ============================================================================
@@ -97,25 +55,31 @@ String getIPAddress() {
 // ============================================================================
 
 void setupWiFiEndpoints(AsyncWebServer &server) {
+    // Root redirects to setup page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "Redirecting...");
         response->addHeader("Location", "/setup/v1/rotator/0/setup");
         request->send(response);
     });
     
+    // Main setup page
     server.on("/setup/v1/rotator/0/setup", HTTP_GET, handleSetupPage);
-    server.on("/setup/v1/rotator/0/wifi", HTTP_GET, handleWifiSetupPage);
-    server.on("/setup/v1/rotator/0/save", HTTP_POST, handleSaveWifi);
+    
+    // WiFi config page is now handled by WiFiConfigPortal at /setup/v1/rotator/0/wifi
+    
+    // Control panel
     server.on("/setup/v1/rotator/0/configdevices", HTTP_GET, handleConfigDevices);
+    
+    // WiFi reset endpoint
     server.on("/reset", HTTP_GET, handleResetWifi);
     
-    // Endpoint to retrieve stored WiFi credentials (JSON format)
+    // Legacy WiFi info endpoints (for backward compatibility)
     server.on("/wifi/credentials", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Preferences preferences;
-        preferences.begin("wifi_config", true);
-        String ssid = preferences.getString("ssid", "");
-        String password = preferences.getString("password", "");
-        preferences.end();
+        Preferences prefs;
+        prefs.begin("wifi_config", true);
+        String ssid = prefs.getString("ssid", "");
+        String password = prefs.getString("password", "");
+        prefs.end();
         
         String json = "{";
         json += "\"ssid\":\"" + ssid + "\",";
@@ -123,51 +87,6 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
         json += "}";
         
         request->send(200, "application/json", json);
-    });
-    
-    // Endpoint to retrieve stored WiFi credentials (HTML format)
-    server.on("/wifi/info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Preferences preferences;
-        preferences.begin("wifi_config", true);
-        String ssid = preferences.getString("ssid", "");
-        String password = preferences.getString("password", "");
-        preferences.end();
-        
-        String html = "<!DOCTYPE html><html><head>";
-        html += "<meta charset='UTF-8'>";
-        html += "<title>WiFi Credentials</title>";
-        html += "<style>";
-        html += "body { font-family: Arial, sans-serif; margin: 40px; background: #f0f0f0; }";
-        html += ".container { background: white; padding: 30px; border-radius: 8px; max-width: 500px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
-        html += "h2 { color: #333; margin-top: 0; }";
-        html += ".credential { margin: 20px 0; padding: 15px; background: #f8f8f8; border-radius: 5px; }";
-        html += ".label { font-weight: bold; color: #666; margin-bottom: 5px; }";
-        html += ".value { font-family: monospace; color: #333; word-break: break-all; }";
-        html += ".empty { color: #999; font-style: italic; }";
-        html += "</style></head><body>";
-        html += "<div class='container'>";
-        html += "<h2>Gespeicherte WiFi Credentials</h2>";
-        html += "<div class='credential'>";
-        html += "<div class='label'>SSID (Netzwerkname):</div>";
-        html += "<div class='value'>";
-        if (ssid.length() > 0) {
-            html += ssid;
-        } else {
-            html += "<span class='empty'>(nicht gesetzt)</span>";
-        }
-        html += "</div></div>";
-        html += "<div class='credential'>";
-        html += "<div class='label'>Password:</div>";
-        html += "<div class='value'>";
-        if (password.length() > 0) {
-            html += password;
-        } else {
-            html += "<span class='empty'>(nicht gesetzt)</span>";
-        }
-        html += "</div></div>";
-        html += "</div></body></html>";
-        
-        request->send(200, "text/html; charset=UTF-8", html);
     });
     
     // Position and status endpoints (needed by control panel JavaScript)
@@ -231,7 +150,6 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
     
     server.on("/cmd", HTTP_GET, cmdHandler);
     server.on("/setup/v1/rotator/0/cmd", HTTP_GET, cmdHandler);
-
     
     server.on("/position", HTTP_GET, [](AsyncWebServerRequest *request) {
         double pos = getServoAngle();
@@ -252,7 +170,7 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
 
 void handleCaptivePortal(AsyncWebServerRequest *request) {
     AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "Redirecting...");
-    response->addHeader("Location", "http://192.168.1.1/");
+    response->addHeader("Location", "http://192.168.1.1/setup/v1/rotator/0/setup");
     request->send(response);
 }
 
@@ -282,78 +200,19 @@ void handleSetupPage(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-void handleWifiSetupPage(AsyncWebServerRequest *request) {
-    Serial.println("WiFi setup page requested");
-
-    String html = "<!DOCTYPE html><html><head>";
-    html += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-    html += "<title>WiFi Configuration</title>";
-    html += "<style>";
-    html += "html{font-family:Arial;background:#181818;color:#ededed}";
-    html += "body{max-width:360px;margin:0 auto;padding:20px;background:rgb(27,90,76);border-radius:12px;box-shadow:0 0 8px #111}";
-    html += "h2{font-size:2rem;padding:20px 0 10px;margin:0;text-align:center}";
-    html += "form{width:100%;box-sizing:border-box}";
-    html += "label{display:block;margin:15px 0 5px;font-size:1.1rem;color:#fdc100}";
-    html += "input[type='text'],input[type='password']{width:100%;padding:12px;margin:5px 0 15px;border:2px solid #e3eae3;border-radius:5px;background:rgb(55,137,75);color:#ededed;font-size:1rem;box-sizing:border-box}";
-    html += "input[type='text']::placeholder,input[type='password']::placeholder{color:#aaa}";
-    html += "input[type='submit']{display:block;width:100%;margin:20px 0 10px;padding:16px;border:0;cursor:pointer;background:#4247b7;color:#fff;border-radius:6px;font-size:1.1rem;text-align:center}";
-    html += "input[type='submit']:hover{background:#5c61d4}";
-    html += ".back-link{display:block;text-align:center;margin-top:20px;color:#fdc100;text-decoration:none}";
-    html += ".back-link:hover{color:#fff}";
-    html += "</style>";
-    html += "</head><body>";
-    html += "<h2>WiFi Configuration</h2>";
-    html += "<form action='/setup/v1/rotator/0/save' method='POST'>";
-    html += "<label>SSID (Network Name):</label>";
-    html += "<input type='text' name='ssid_manual' placeholder='Enter network name' required>";
-    html += "<label>Password:</label>";
-    html += "<input type='password' name='password' placeholder='Enter password' required>";
-    html += "<input type='submit' value='Save and Restart'>";
-    html += "</form>";
-    html += "<a href='/setup/v1/rotator/0/setup' class='back-link'>&larr; Back to Setup</a>";
-    html += "</body></html>";
-
-    AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", html);
-    request->send(response);
-}
-
-void handleSaveWifi(AsyncWebServerRequest *request) {
-    String ssid = request->arg("ssid_manual");
-    if (ssid == "") {
-        ssid = request->arg("ssid");
-    }
-    String password = request->arg("password");
-
-    if (ssid != "" && password != "") {
-        preferences.begin("wifi_config", false);
-        preferences.putString("ssid", ssid);
-        preferences.putString("password", password);
-        preferences.end();
-
-        Serial.println("WiFi credentials saved: " + ssid);
-
-        String html = "<h3>WiFi credentials saved! Restarting...</h3>";
-        AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", html);
-        request->send(response);
-        
-        delay(2000);
-        ESP.restart();
-    } else {
-        AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", "Missing parameters");
-        request->send(response);
-    }
-}
-
 void handleResetWifi(AsyncWebServerRequest *request) {
     Serial.println("WiFi reset requested");
 
-    preferences.begin("wifi_config", false);
-    preferences.clear();
-    preferences.end();
+    Preferences prefs;
+    prefs.begin("wifi_config", false);
+    prefs.clear();
+    prefs.end();
 
     Serial.println("WiFi credentials cleared");
 
-    String html = "<h2>WiFi configuration reset! Restarting...</h2>";
+    String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>";
+    html += "<h2>WiFi configuration reset! Restarting...</h2>";
+    html += "</body></html>";
     AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", html);
     request->send(response);
 
