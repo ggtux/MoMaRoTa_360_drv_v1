@@ -21,10 +21,13 @@ Alle ASCOM Alpaca API-Endpunkte:
 - **UDP Discovery**: Alpaca-Discovery-Protocol für automatische Geräteerkennung
 
 #### `include/wifi_manager.h` & `src/wifi_manager.cpp`
-WiFi und Setup-Verwaltung (optimiert aus parkplatz/CONNECT.h):
-- WiFi-Verbindung mit gespeicherten Credentials
-- Access Point Modus als Fallback
-- Captive Portal für einfache Konfiguration
+WiFi und Setup-Verwaltung mit integriertem WiFiConfigPortal:
+- **WiFiConfigPortal-Integration**: Modernes Web-Interface für WiFi-Konfiguration
+- **Automatisches Netzwerk-Scanning**: Zeigt verfügbare WiFi-Netzwerke mit RSSI-Werten
+- **Credentials-Speicherung**: Automatische Verbindung beim nächsten Start
+- **Versteckte Netzwerke**: Manuelle SSID-Eingabe möglich
+- **Access Point Fallback**: "MoMaRoTa" AP bei fehlender Verbindung
+- **Captive Portal**: Automatische Umleitung zur Konfiguration
 - Setup-Webseiten: `/setup/v1/rotator/0/setup`, `/setup/v1/rotator/0/wifi`
 - Control Panel: `/setup/v1/rotator/0/configdevices`
 - Kommando-Handler für Rotator-Steuerung: `/cmd`, `/position`, `/printip`
@@ -71,19 +74,36 @@ OLED Display-Steuerung (optimiert aus parkplatz/BOARD_DEV.h):
 - **Discovery**: UDP Multicast auf Port 32227
 - **HTTP Server**: Port 80
 
-### WiFi Modi
-1. **STA Mode**: Verbindung zu bekanntem WLAN
-2. **AP Mode**: Fallback als Access Point "MoMaRoTa"
+### WiFi-Konfiguration
+
+#### WiFiConfigPortal Features
+- 🔍 **Automatisches Netzwerk-Scanning**: Erkennt verfügbare WiFi-Netzwerke automatisch
+- 📶 **Signalstärke-Anzeige**: Zeigt RSSI-Werte für bessere Netzwerkauswahl
+- 🎨 **Modernes Web-Interface**: Responsive Design mit Gradient-Hintergrund
+- 🔐 **Versteckte Netzwerke**: Manuelle SSID-Eingabe für Hidden SSIDs
+- 💾 **Persistente Speicherung**: WiFi-Credentials werden gespeichert
+- 🔄 **Auto-Reconnect**: Automatische Verbindung beim nächsten Start
+
+#### WiFi Modi
+1. **STA Mode**: Verbindung zu bekanntem WLAN (aus gespeicherten Credentials)
+2. **AP Mode**: Fallback als Access Point "MoMaRoTa" (Passwort: 12345678)
 3. **Captive Portal**: Automatische Umleitung zur Konfiguration
 
 ## Verwendung
 
 ### Erste Inbetriebnahme
 1. ESP32 mit Strom versorgen
-2. Nach "MoMaRoTa" WLAN suchen und verbinden
-3. Browser öffnet automatisch Setup-Seite (oder zu 192.168.1.1)
-4. WiFi-Einstellungen konfigurieren
-5. Nach Neustart verbindet sich das Gerät mit dem WLAN
+2. Nach "MoMaRoTa" WLAN suchen und verbinden (Passwort: 12345678)
+3. Browser öffnet automatisch Setup-Seite (oder zu http://192.168.1.1)
+4. "WiFi Settings" anklicken
+5. **Neues WiFi-Portal öffnet sich** mit folgenden Optionen:
+   - Netzwerk aus der automatisch gescannten Liste auswählen
+   - Oder: Versteckte Netzwerke manuell eingeben
+   - RSSI-Werte und Verschlüsselungstyp werden angezeigt
+6. Passwort eingeben und "Verbinden und Speichern" klicken
+7. Nach Neustart verbindet sich das Gerät automatisch mit dem WLAN
+
+**Tipp**: Bei zukünftigen Starts verbindet sich der Rotator automatisch mit dem gespeicherten Netzwerk!
 
 ### ALPACA Discovery
 ASCOM-kompatible Software findet das Gerät automatisch über:
@@ -109,8 +129,9 @@ ASCOM-kompatible Software findet das Gerät automatisch über:
 Die neue Struktur trennt klar zwischen:
 - **Hauptlogik** (main.cpp): Minimales Setup und Loop
 - **ALPACA Protocol** (alpaca_handlers): Alle API-Endpunkte
-- **WiFi Management** (wifi_manager): Verbindung und Setup-Seiten
+- **WiFi Management** (wifi_manager + WiFiConfigPortal): Verbindung und Setup-Seiten
 - **Servo Control** (servo_control): Hardware-nahe Steuerung
+- **Display Control** (display_control): OLED Display-Verwaltung
 
 ### Vorteile
 - ✅ Übersichtlicher Code (79 Zeilen main.cpp statt 630)
