@@ -35,6 +35,12 @@
 │   ├── SCSCL.cpp                    # Servo Control Layer
 │   └── SCSerial.cpp                 # Servo Serial
 │
+├── lib/                             # Externe Bibliotheken
+│   ├── WiFiConfigPortal/            # 🆕 NEU: WiFi Config Portal Modul
+│   │   ├── WiFiConfigPortal.h       # Header
+│   │   └── WiFiConfigPortal.cpp     # Implementierung
+│   └── README
+│
 ├── parkplatz/                       # 🗄️ Referenz-Code (nicht kompiliert)
 │   ├── CONNECT.h                    # Basis für wifi_manager
 │   ├── WEBPAGE.h                    # Basis für display_controlPanel
@@ -65,11 +71,20 @@
 │ • initServo() │ │ • initWiFi()  │ │ • initDiscovery()│
 │ • getFeedback │ │ • processDNS()│ │ • handleDiscovery│
 │ • moveServox()│ │ • setupWiFix()│ │ • setupAlpacax() │
-│ • getAngle()  │ │ • handleCmd() │ │ • handleMove()   │
-│ • setSpeed()  │ │ • handleSave()│ │ • handlePosition│
-│ • setZero()   │ │ • getIP()     │ │ • handle...()    │
-└───────────────┘ └───────────────┘ └──────────────────┘
+│ • getAngle()  │ │               │ │ • handleMove()   │
+│ • setSpeed()  │ │  (Integriert) │ │ • handlePosition│
+│ • setZero()   │ │  Portal-Modul │ │ • handle...()    │
+└───────────────┘ └───────┬───────┘ └──────────────────┘
         │               │                     │
+        │               ▼                     │
+        │      ┌────────────────────┐    │
+        │      │ WiFiConfigPortal   │    │
+        │      ├────────────────────┤    │
+        │      │ • Netzwerk-Scan    │    │
+        │      │ • RSSI-Anzeige     │    │
+        │      │ • Credentials      │    │
+        │      │ • Auto-Reconnect   │    │
+        │      └────────────────────┘    │
         │               │                     │
         ▼               ▼                     ▼
 ┌───────────────┐ ┌───────────────┐ ┌──────────────────┐
@@ -80,19 +95,21 @@
 
 ## Endpunkt-Verteilung
 
-### WiFi Manager (`/setup/*`, `/cmd`, `/position`)
+### WiFi Manager (`/setup/*`, `/cmd`, `/position`, `/wifi/*`)
 ```
-wifi_manager.cpp
+wifi_manager.cpp + WiFiConfigPortal
 ├── GET  /                                    → Redirect to setup
 ├── GET  /setup/v1/rotator/0/setup           → Setup-Menü
-├── GET  /setup/v1/rotator/0/wifi            → WiFi-Konfiguration
-├── POST /setup/v1/rotator/0/save            → WiFi speichern & restart
+├── GET  /setup/v1/rotator/0/wifi            → 🆕 WiFi-Portal (Netzwerk-Scan)
+├── GET  /wifi/scan                           → 🆕 Netzwerk-Scan JSON
+├── POST /wifi/connect                       → 🆕 WiFi verbinden & speichern
+├── GET  /wifi/status                         → 🆕 Verbindungsstatus
 ├── GET  /setup/v1/rotator/0/configdevices   → Rotator Control Panel
 ├── GET  /reset                               → WiFi-Reset
-├── GET  /cmd                                 → Rotator-Kommandos (Case 1-21)
+├── GET  /cmd                                 → Rotator-Kommandos (Case 1-23)
 ├── GET  /position                            → Aktuelle Position
-└── GET  /printip                             → IP-Adresse
-    └── Captive Portal: /hotspot-detect.html, /generate_204, /connecttest.txt
+├── GET  /printip                             → IP-Adresse
+└── Captive Portal: /hotspot-detect.html, /generate_204, /connecttest.txt
 ```
 
 ### ALPACA Handlers (`/api/*`, `/management/*`)
@@ -131,11 +148,12 @@ alpaca_handlers.cpp
 |--------------------|---------|---------|----------------------------------|
 | main.cpp           | 1       | 95      | Setup & Loop                     |
 | alpaca_handlers    | 2       | ~380    | ALPACA Protocol                  |
-| wifi_manager       | 2       | ~340    | WiFi & Web Interface             |
+| wifi_manager       | 2       | ~250    | WiFi Management                  |
+| WiFiConfigPortal   | 2       | ~550    | 🆕 Modernes WiFi-Portal       |
 | servo_control      | 2       | ~340    | Servo Hardware Control           |
 | display_control    | 2       | ~120    | OLED Display                     |
 | SMS_STS (Lib)      | 8       | ~1500   | Servo Communication Library      |
-| **GESAMT**         | **17**  | **2775**| **Vollständiger ALPACA Driver**  |
+| **GESAMT**         | **19**  | **3235**| **ALPACA Driver + WiFi Portal**  |
 
 ## Workflow
 
