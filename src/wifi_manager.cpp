@@ -18,8 +18,8 @@ void initWiFi() {
 
 void connectWiFi() {
     // TEST: Fixed WiFi credentials
-    String ssid = "FiegeosNetz";
-    String password = "Manuelnoir1";
+    String ssid = "";
+    String password = "";
     
     // Disconnect and clear previous config
     WiFi.disconnect(true);
