@@ -17,9 +17,27 @@ void initWiFi() {
 }
 
 void connectWiFi() {
-    // TEST: Fixed WiFi credentials
-    String ssid = "";
-    String password = "";
+    // Load stored WiFi credentials
+    preferences.begin("wifi_config", true); // read-only
+    String ssid = preferences.getString("ssid", "");
+    String password = preferences.getString("password", "");
+    preferences.end();
+
+    // If no SSID is stored, skip STA connect and start AP directly
+    if (ssid.length() == 0) {
+        Serial.println("No stored WiFi SSID - starting Access Point...");
+        WiFi.disconnect(true);
+        delay(200);
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.softAP(apSSID);
+        WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+        dnsServer.start(53, "*", apIP);
+        Serial.print("AP started: ");
+        Serial.println(apSSID);
+        Serial.print("AP IP: ");
+        Serial.println(WiFi.softAPIP());
+        return;
+    }
     
     // Disconnect and clear previous config
     WiFi.disconnect(true);
@@ -63,6 +81,7 @@ void connectWiFi() {
     // Start Access Point if connection failed
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("\nStarting Access Point...");
+        WiFi.mode(WIFI_AP_STA);
         WiFi.softAP(apSSID);
         WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
         
@@ -105,6 +124,33 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
     
     server.on("/setup/v1/rotator/0/setup", HTTP_GET, handleSetupPage);
     server.on("/setup/v1/rotator/0/wifi", HTTP_GET, handleWifiSetupPage);
+
+    // Scan available WiFi networks (JSON)
+    server.on("/setup/v1/rotator/0/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // Ensure STA is enabled for scanning (keep AP running)
+        if (WiFi.getMode() == WIFI_AP) {
+            WiFi.mode(WIFI_AP_STA);
+        }
+
+        int n = WiFi.scanNetworks(false, true); // blocking scan, show hidden
+
+        String json = "{\"count\":" + String(n) + ",\"networks\":[";
+        for (int i = 0; i < n; i++) {
+            if (i > 0) json += ",";
+            String ssid = WiFi.SSID(i);
+            // Minimal JSON escaping for quotes and backslashes
+            ssid.replace("\\", "\\\\");
+            ssid.replace("\"", "\\\"");
+
+            json += "{\"ssid\":\"" + ssid + "\",";
+            json += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+            json += "\"enc\":" + String((int)WiFi.encryptionType(i)) + "}";
+        }
+        json += "]}";
+
+        WiFi.scanDelete();
+        request->send(200, "application/json", json);
+    });
     server.on("/setup/v1/rotator/0/save", HTTP_POST, handleSaveWifi);
     server.on("/setup/v1/rotator/0/configdevices", HTTP_GET, handleConfigDevices);
     server.on("/reset", HTTP_GET, handleResetWifi);
@@ -305,12 +351,36 @@ void handleWifiSetupPage(AsyncWebServerRequest *request) {
     html += "<h2>WiFi Configuration</h2>";
     html += "<form action='/setup/v1/rotator/0/save' method='POST'>";
     html += "<label>SSID (Network Name):</label>";
-    html += "<input type='text' name='ssid_manual' placeholder='Enter network name' required>";
+    html += "<div style='display:flex;gap:8px;align-items:center;margin:5px 0 10px'>";
+    html += "<select id='ssid_list' style='flex:1;padding:12px;border:2px solid #e3eae3;border-radius:5px;background:rgb(55,137,75);color:#ededed;font-size:1rem'></select>";
+    html += "<button type='button' id='scanBtn' style='padding:12px 14px;border:0;cursor:pointer;background:#4247b7;color:#fff;border-radius:6px;font-size:0.95rem'>Scan</button>";
+    html += "</div>";
+    html += "<div style='font-size:0.9rem;color:#ccc;margin:-6px 0 12px'>Wähle ein WLAN aus der Liste oder tippe die SSID manuell.</div>";
+    html += "<input type='text' id='ssid_manual' name='ssid_manual' placeholder='Enter network name'>";
     html += "<label>Password:</label>";
-    html += "<input type='password' name='password' placeholder='Enter password' required>";
+    html += "<input type='password' name='password' placeholder='Enter password (optional)'>";
     html += "<input type='submit' value='Save and Restart'>";
     html += "</form>";
     html += "<a href='/setup/v1/rotator/0/setup' class='back-link'>&larr; Back to Setup</a>";
+    html += "<script>";
+    html += "const sel=document.getElementById('ssid_list');";
+    html += "const ssidInput=document.getElementById('ssid_manual');";
+    html += "function setBtn(b,txt,dis){b.textContent=txt;b.disabled=dis;b.style.opacity=dis?0.7:1;}";
+    html += "function fill(list){sel.innerHTML='';";
+    html += "const opt0=document.createElement('option');opt0.value='';opt0.textContent='-- Select WiFi --';sel.appendChild(opt0);";
+    html += "list.forEach(n=>{const o=document.createElement('option');o.value=n.ssid;o.textContent=`${n.ssid} (${n.rssi} dBm)`;sel.appendChild(o);});";
+    html += "}";
+    html += "async function scan(){";
+    html += "const b=document.getElementById('scanBtn');setBtn(b,'Scanning...',true);";
+    html += "try{const r=await fetch('/setup/v1/rotator/0/scan');const j=await r.json();";
+    html += "fill(j.networks||[]);}";
+    html += "catch(e){alert('Scan failed');}";
+    html += "finally{setBtn(document.getElementById('scanBtn'),'Scan',false);}";
+    html += "}";
+    html += "document.getElementById('scanBtn').addEventListener('click',scan);";
+    html += "sel.addEventListener('change',()=>{if(sel.value){ssidInput.value=sel.value;}});";
+    html += "window.addEventListener('load',scan);";
+    html += "</script>";
     html += "</body></html>";
 
     AsyncWebServerResponse *response = request->beginResponse(200, "text/html; charset=UTF-8", html);
@@ -324,7 +394,7 @@ void handleSaveWifi(AsyncWebServerRequest *request) {
     }
     String password = request->arg("password");
 
-    if (ssid != "" && password != "") {
+    if (ssid != "") {
         preferences.begin("wifi_config", false);
         preferences.putString("ssid", ssid);
         preferences.putString("password", password);
