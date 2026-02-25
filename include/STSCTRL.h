@@ -1,3 +1,7 @@
+#define S_RXD 18
+#define S_TXD 19
+// Buffer für Motor-Feedback
+s16  loadRead;
 #include <SMS_STS.h>
 #include <math.h>
 
@@ -17,11 +21,10 @@ float gearRatio_ST = 2.0; // gear ratio 1 rotation for 180 deg
 bool serialFeedback = true;
 
 // Single motor with ID = 1
-const byte MOTOR_ID = 0;
+const int MOTOR_ID = 0;
 bool Torque_Status = true;
 
 // Buffer for motor feedback
-s16  loadRead;
 s16  speedRead;
 byte voltageRead;
 int  currentRead;
@@ -36,6 +39,9 @@ s16 virtualZeroOffset = 0;
 
 // Aktuelle Soll-Position (für Motor-Mode tracking)
 s16 currentTargetPosition = 0;
+
+// s16 und u8 Typen bereitstellen
+#include "SCServo.h"
 
 // Motor block detection
 int feedbackRetries = 0;
