@@ -1,4 +1,6 @@
 #include <SMS_STS.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "servo_control.h"
 
 // Hardware configuration
@@ -18,14 +20,36 @@ static int MOTOR_ID = 0;  // Default to 0, will be updated by scanForMotor()
 // Gear ratio: 1:2 (180° gear = 360° motor = 1 full rotation)
 #define GEAR_RATIO 2.0
 
+// Motor polarity for this gearbox/wiring. A positive ASCOM angle requires a
+// negative ST3215 step command. The ASCOM Reverse property flips this base.
+const int MOTOR_BASE_DIRECTION = -1;
+
 // SMS_STS servo object
 SMS_STS st;
+static SemaphoreHandle_t servoBusMutex = nullptr;
+
+// Cable protection: the logical position may never wind more than one full
+// rotation away from the position at which the controller was powered on.
+const double CABLE_MIN_ANGLE = -360.0;
+const double CABLE_MAX_ANGLE = 360.0;
+
+static bool lockServoBus() {
+    return servoBusMutex == nullptr ||
+           xSemaphoreTake(servoBusMutex, pdMS_TO_TICKS(50)) == pdTRUE;
+}
+
+static void unlockServoBus() {
+    if(servoBusMutex != nullptr) {
+        xSemaphoreGive(servoBusMutex);
+    }
+}
 
 // State variables
 s16 activeServoSpeed = 400;
 s16 currentTargetPosition = 0;
 s16 virtualZeroOffset = 0;
 bool reverseDirection = false;  // Reverse rotation direction
+int activeMovementCommandSign = MOTOR_BASE_DIRECTION;
 s16 absolutePosition = 0;  // Absolute accumulated position for display
 s16 lastPosRead = 0;  // Last posRead value for delta calculation
 
@@ -37,6 +61,29 @@ int currentRead = 0;
 s16 posRead = 0;
 s16 modeRead = 0;
 s16 temperRead = 0;
+int moveRead = 0;
+
+// Alpaca movement state. Completion is based on a stable motor stop, not on
+// exact floating-point equality with the requested angle.
+const int MOVEMENT_POSITION_TOLERANCE_STEPS = 4;
+// Some ST3215 units stop a few steps short although the move has completed.
+// Keep the stricter movement tolerance, but snap the reported idle position
+// for small residuals so Alpaca clients cannot wait on Position == TargetPosition.
+const int POSITION_REPORT_SNAP_STEPS = 16;
+const unsigned long MOVEMENT_START_GRACE_MS = 200;
+const unsigned long MOVEMENT_START_CONFIRM_MS = 1500;
+const unsigned long MOVEMENT_STOP_SETTLE_MS = 500;
+const unsigned long MOVEMENT_NO_PROGRESS_MS = 4000;
+const unsigned long MOVEMENT_TIMEOUT_MS = 15000;
+const unsigned long FEEDBACK_TIMEOUT_MS = 2000;
+volatile bool movementActive = false;
+volatile bool movementObserved = false;
+unsigned long movementStartMillis = 0;
+unsigned long lastValidFeedbackMillis = 0;
+unsigned long stoppedSinceMillis = 0;
+unsigned long lastProgressMillis = 0;
+int bestRemainingSteps = -1;
+double targetAngleDegrees = 0.0;
 
 // Motor block detection
 int feedbackRetries = 0;
@@ -83,8 +130,12 @@ int scanForMotor() {
 }
 
 void initServo() {
+    servoBusMutex = xSemaphoreCreateMutex();
     Serial1.begin(1000000, SERIAL_8N1, S_RXD, S_TXD);
     st.pSerial = &Serial1;
+    // At 1 Mbit/s a complete feedback frame takes far below 20 ms. Keeping
+    // this short prevents a missing servo response from stalling Alpaca.
+    st.IOTimeOut = 20;
     delay(200);
     
     while(!Serial1) {}
@@ -145,6 +196,8 @@ void initServo() {
     currentTargetPosition = 0;
     absolutePosition = 0;
     lastPosRead = 0;
+    movementActive = false;
+    targetAngleDegrees = 0.0;
     Serial.println("Motor-Mode (3) initialized - position set to 0°");
 }
 
@@ -174,6 +227,10 @@ void setMode(int mode) {
 // ============================================================================
 
 void getFeedback() {
+    if(!lockServoBus()) {
+        return;
+    }
+
     int result = st.FeedBack(MOTOR_ID);
     
     if(result != -1) {
@@ -184,10 +241,12 @@ void getFeedback() {
         currentRead = st.ReadCurrent(-1);
         temperRead = st.ReadTemper(-1);
         modeRead = st.ReadMode(MOTOR_ID);
+        moveRead = st.ReadMove(-1);
         
         feedbackRetries = 0;
         consecutiveErrors = 0;
         motorBlocked = false;
+        lastValidFeedbackMillis = millis();
         
         // Check for motor blockage via high load
         if(abs(loadRead) > 800) {
@@ -214,11 +273,109 @@ void getFeedback() {
             }
         }
     }
+
+    unlockServoBus();
+}
+
+void updateServoMovementState() {
+    if(!movementActive) {
+        return;
+    }
+
+    unsigned long now = millis();
+    unsigned long elapsed = now - movementStartMillis;
+
+    // A move must be visible to Alpaca immediately, even before the first
+    // feedback sample reports a non-zero speed.
+    if(elapsed < MOVEMENT_START_GRACE_MS) {
+        return;
+    }
+
+    // Never retain a stale non-zero speed forever after communication loss.
+    if(now - lastValidFeedbackMillis > FEEDBACK_TIMEOUT_MS) {
+        Serial.println("Movement released: servo feedback timeout");
+        movementActive = false;
+        movementObserved = false;
+        stoppedSinceMillis = 0;
+        speedRead = 0;
+        moveRead = 0;
+        return;
+    }
+
+    // Fail safe: an Alpaca client must never wait indefinitely.
+    if(elapsed > MOVEMENT_TIMEOUT_MS) {
+        Serial.println("Movement timeout: stopping servo and releasing Alpaca");
+        stopServo();
+        return;
+    }
+
+    bool speedMoving = (abs(speedRead) > 10);
+    bool hardwareMoving = (moveRead == 1);
+    if(speedMoving || hardwareMoving) {
+        movementObserved = true;
+    }
+
+    // Cached feedback can still show the pre-command stopped state when the
+    // first IsMoving checks arrive. Do not declare completion until actual
+    // motion was observed, or until the start-confirmation window expires.
+    if(!movementObserved) {
+        if(elapsed < MOVEMENT_START_CONFIRM_MS) {
+            return;
+        }
+
+        Serial.println("Movement released: no motion observed after command");
+        movementActive = false;
+        movementObserved = false;
+        stoppedSinceMillis = 0;
+        return;
+    }
+
+    int remainingSteps = abs(posRead);
+    if(remainingSteps > MOVEMENT_POSITION_TOLERANCE_STEPS &&
+       (bestRemainingSteps < 0 ||
+        remainingSteps + MOVEMENT_POSITION_TOLERANCE_STEPS < bestRemainingSteps)) {
+        bestRemainingSteps = remainingSteps;
+        lastProgressMillis = now;
+    }
+
+    // Any reliable completion signal may finish a move. Some ST3215 units keep
+    // their moving bit set, while others report a small non-zero speed at rest.
+    bool speedStopped = (abs(speedRead) <= 10);
+    bool hardwareStopped = (moveRead == 0);
+    bool targetReached = (remainingSteps <= MOVEMENT_POSITION_TOLERANCE_STEPS);
+    if(speedStopped || hardwareStopped || targetReached) {
+        if(stoppedSinceMillis == 0) {
+            stoppedSinceMillis = now;
+        } else if(now - stoppedSinceMillis >= MOVEMENT_STOP_SETTLE_MS) {
+            if(moveRead == 1) {
+                Serial.println("Movement released: motor stopped with stale moving flag");
+            }
+            movementActive = false;
+            movementObserved = false;
+            stoppedSinceMillis = 0;
+            return;
+        }
+    } else {
+        stoppedSinceMillis = 0;
+    }
+
+    // If the motor keeps reporting motion but no longer gets closer to the
+    // target, stop it instead of blocking the imaging sequence indefinitely.
+    if(remainingSteps > MOVEMENT_POSITION_TOLERANCE_STEPS &&
+       bestRemainingSteps >= 0 &&
+       now - lastProgressMillis >= MOVEMENT_NO_PROGRESS_MS) {
+        Serial.print("Movement stalled with ");
+        Serial.print(remainingSteps);
+        Serial.println(" steps remaining - stopping and releasing Alpaca");
+        stopServo();
+        return;
+    }
 }
 
 bool isServoMoving() {
-    getFeedback();
-    return (abs(speedRead) > 10); // Consider moving if speed > 10
+    // The main loop owns the movement state machine. HTTP callbacks only read
+    // this cached flag and therefore cannot block plate-solving requests.
+    return movementActive;
 }
 
 bool isMotorBlocked() {
@@ -236,6 +393,10 @@ int getMotorID() { return MOTOR_ID; }
 void setReverseDirection(bool reverse) { reverseDirection = reverse; }
 bool getReverseDirection() { return reverseDirection; }
 
+static int getMotorCommandSign() {
+    return reverseDirection ? -MOTOR_BASE_DIRECTION : MOTOR_BASE_DIRECTION;
+}
+
 // ============================================================================
 // MOVEMENT FUNCTIONS
 // ============================================================================
@@ -251,39 +412,76 @@ void gotoPosition(int targetPosition, int currentPos) {
     Serial.print(" delta=");
     Serial.println(relativeDelta);
     
+    if(!lockServoBus()) {
+        Serial.println("Goto rejected: servo bus busy");
+        movementActive = false;
+        return;
+    }
     st.WritePosEx(MOTOR_ID, relativeDelta, activeServoSpeed, SERVO_INIT_ACC);
+    unlockServoBus();
     
     currentTargetPosition = targetPosition;
     absolutePosition += relativeDelta;  // Update absolute position
 }
 
-void moveServoToAngle(double angleDeg) {
-    // Get current angle
-    double currentAngle = getServoAngle();
-    
+static double stepsToOutputDegrees(int steps) {
+    return (steps / SERVO_STEPS) * SERVO_ANGLE_RANGE / GEAR_RATIO;
+}
+
+static bool chooseCableSafeTarget(double wrappedTarget, double &unwrappedTarget) {
+    double currentCableAngle = stepsToOutputDegrees(absolutePosition);
+    bool found = false;
+    double bestDistance = 1000000.0;
+
+    // The same mechanical angle occurs every 360 degrees. Select the closest
+    // equivalent that remains inside the one-turn cable safety window.
+    for(int turn = -1; turn <= 1; turn++) {
+        double candidate = wrappedTarget + (360.0 * turn);
+        if(candidate < CABLE_MIN_ANGLE || candidate > CABLE_MAX_ANGLE) {
+            continue;
+        }
+
+        double distance = abs(candidate - currentCableAngle);
+        if(!found || distance < bestDistance) {
+            found = true;
+            bestDistance = distance;
+            unwrappedTarget = candidate;
+        }
+    }
+    return found;
+}
+
+bool moveServoToAngle(double angleDeg) {
     // Wrap target angle to 0-359.99
     while(angleDeg >= 360.0) angleDeg -= 360.0;
     while(angleDeg < 0.0) angleDeg += 360.0;
-    
-    // Calculate shortest path delta in degrees
-    double deltaDeg = angleDeg - currentAngle;
-    
-    // Normalize delta to shortest path (-180 to +180)
-    while(deltaDeg > 180.0) deltaDeg -= 360.0;
-    while(deltaDeg < -180.0) deltaDeg += 360.0;
+    targetAngleDegrees = angleDeg;
+
+    double cableTargetAngle = 0.0;
+    if(!chooseCableSafeTarget(angleDeg, cableTargetAngle)) {
+        Serial.println("Move rejected: no target inside cable safety window");
+        movementActive = false;
+        return false;
+    }
+
+    double currentCableAngle = stepsToOutputDegrees(absolutePosition);
+    double deltaDeg = cableTargetAngle - currentCableAngle;
     
     // Convert delta degrees to motor steps
     double motorDegrees = deltaDeg * GEAR_RATIO;
     s16 logicalDelta = (s16)((motorDegrees / SERVO_ANGLE_RANGE) * SERVO_STEPS);
     
-    // Reverse: Invert movement direction for motor command only
-    s16 motorDelta = reverseDirection ? -logicalDelta : logicalDelta;
+    // Apply the physical motor polarity, then the optional ASCOM Reverse flag.
+    int commandSign = getMotorCommandSign();
+    s16 motorDelta = logicalDelta * commandSign;
     
     Serial.print("Move to ");
     Serial.print(angleDeg);
-    Serial.print("° from ");
-    Serial.print(currentAngle);
-    Serial.print("°");
+    Serial.print("° (cable ");
+    Serial.print(currentCableAngle);
+    Serial.print("° -> ");
+    Serial.print(cableTargetAngle);
+    Serial.print("°)");
     if(reverseDirection) Serial.print(" [REV]");
     Serial.print(" → delta: ");
     Serial.print(deltaDeg);
@@ -291,26 +489,73 @@ void moveServoToAngle(double angleDeg) {
     Serial.print(motorDelta);
     Serial.println(" steps)");
     
+    // Positions closer than the physical resolution are already reached.
+    if(abs(logicalDelta) <= MOVEMENT_POSITION_TOLERANCE_STEPS) {
+        movementActive = false;
+        movementObserved = false;
+        stoppedSinceMillis = 0;
+        return true;
+    }
+
+    if(!lockServoBus()) {
+        Serial.println("Move rejected: servo bus busy");
+        movementActive = false;
+        movementObserved = false;
+        return false;
+    }
+
+    movementStartMillis = millis();
+    stoppedSinceMillis = 0;
+    lastProgressMillis = movementStartMillis;
+    bestRemainingSteps = -1;
+    movementObserved = false;
+    movementActive = true;
+    activeMovementCommandSign = commandSign;
     st.WritePosEx(MOTOR_ID, motorDelta, activeServoSpeed, SERVO_INIT_ACC);
+    unlockServoBus();
     currentTargetPosition += motorDelta;
     absolutePosition += logicalDelta;  // Always use logical delta for position tracking
+    return true;
 }
 
-void moveServoByAngle(double deltaDeg) {
-    // Calculate target from current position
-    double currentAngle = getServoAngle();
-    double targetAngle = currentAngle + deltaDeg;
-    moveServoToAngle(targetAngle);
-    // absolutePosition is already updated in moveServoToAngle
+bool moveServoByAngle(double deltaDeg) {
+    double currentCableAngle = stepsToOutputDegrees(absolutePosition);
+    double requestedCableTarget = currentCableAngle + deltaDeg;
+
+    // A relative Move specifies its direction explicitly. Do not silently
+    // substitute the opposite direction when that would cross a cable limit.
+    if(requestedCableTarget < CABLE_MIN_ANGLE ||
+       requestedCableTarget > CABLE_MAX_ANGLE) {
+        Serial.print("Relative move rejected by cable guard: ");
+        Serial.print(currentCableAngle);
+        Serial.print("° -> ");
+        Serial.print(requestedCableTarget);
+        Serial.println("°");
+        movementActive = false;
+        return false;
+    }
+
+    double wrappedTarget = requestedCableTarget;
+    while(wrappedTarget >= 360.0) wrappedTarget -= 360.0;
+    while(wrappedTarget < 0.0) wrappedTarget += 360.0;
+    return moveServoToAngle(wrappedTarget);
 }
 
 double getServoAngle() {
-    // Get live position during movement
-    getFeedback();
-    
-    // In Motor-Mode 3, posRead shows remaining distance to target
-    // Calculate actual position: absolutePosition - posRead
-    s16 currentPos = absolutePosition - posRead;
+    // Return the latest feedback cached by the main loop. Alpaca callbacks run
+    // on another ESP32 task and must never access the serial servo bus directly.
+    // posRead uses the physical motor-command sign. Convert it back to the
+    // logical ASCOM direction before calculating the current angle.
+    int logicalRemaining = posRead * activeMovementCommandSign;
+    int currentPos = absolutePosition - logicalRemaining;
+
+    // Once a move has completed with only a small physical residual, report
+    // the requested angle exactly. This protects clients that incorrectly
+    // compare Position and TargetPosition instead of relying on IsMoving.
+    // 16 output steps are about 0.70 degrees with the 1:2 gearing.
+    if(!movementActive && abs(logicalRemaining) <= POSITION_REPORT_SNAP_STEPS) {
+        return targetAngleDegrees;
+    }
     
     // Convert to gear degrees
     double motorDegrees = (currentPos / SERVO_STEPS) * SERVO_ANGLE_RANGE;
@@ -323,6 +568,10 @@ double getServoAngle() {
     return gearDegrees;
 }
 
+double getServoTargetAngle() {
+    return targetAngleDegrees;
+}
+
 // ============================================================================
 // ZERO POINT & CALIBRATION
 // ============================================================================
@@ -331,6 +580,12 @@ void setCurrentTargetPosition(int steps) {
     // Update current position without moving (used by Sync)
     currentTargetPosition = steps;
     absolutePosition = steps;  // Also update absolutePosition for display
+    targetAngleDegrees = (steps / SERVO_STEPS) * SERVO_ANGLE_RANGE / GEAR_RATIO;
+    while(targetAngleDegrees >= 360.0) targetAngleDegrees -= 360.0;
+    while(targetAngleDegrees < 0.0) targetAngleDegrees += 360.0;
+    movementActive = false;
+    movementObserved = false;
+    stoppedSinceMillis = 0;
     Serial.print("Position synced to ");
     Serial.print(steps);
     Serial.println(" steps");
@@ -342,6 +597,10 @@ void setZeroPointMode3() {
     Serial.println("Setting zero point in motor mode (virtual)...");
     currentTargetPosition = 0;
     absolutePosition = 0;
+    targetAngleDegrees = 0.0;
+    movementActive = false;
+    movementObserved = false;
+    stoppedSinceMillis = 0;
     Serial.println("Virtual zero point set successfully");
 }
 
@@ -349,6 +608,10 @@ void setZeroPointExact() {
     Serial.println("Setting current position as zero point...");
     currentTargetPosition = 0;
     absolutePosition = 0;
+    targetAngleDegrees = 0.0;
+    movementActive = false;
+    movementObserved = false;
+    stoppedSinceMillis = 0;
     Serial.println("Current position set to 0° (zero point)");
 }
 
@@ -365,17 +628,34 @@ void stopServo() {
     getFeedback();
     
     // Correct absolutePosition to actual current position
-    // posRead shows remaining distance to target
-    // So actual position = target - remaining = absolutePosition - posRead
-    absolutePosition = absolutePosition - posRead;
+    // Convert the physical remaining steps back to logical ASCOM direction.
+    int logicalRemaining = posRead * activeMovementCommandSign;
+    absolutePosition = absolutePosition - logicalRemaining;
+    posRead = 0;
     
-    st.EnableTorque(MOTOR_ID, 0);
-    delay(10);
-    st.EnableTorque(MOTOR_ID, 1);
+    if(lockServoBus()) {
+        st.EnableTorque(MOTOR_ID, 0);
+        delay(10);
+        st.EnableTorque(MOTOR_ID, 1);
+        unlockServoBus();
+    } else {
+        Serial.println("Stop warning: servo bus busy");
+    }
+
+    double stoppedMotorDegrees = (absolutePosition / SERVO_STEPS) * SERVO_ANGLE_RANGE;
+    targetAngleDegrees = stoppedMotorDegrees / GEAR_RATIO;
+    while(targetAngleDegrees >= 360.0) targetAngleDegrees -= 360.0;
+    while(targetAngleDegrees < 0.0) targetAngleDegrees += 360.0;
+    movementActive = false;
+    movementObserved = false;
+    stoppedSinceMillis = 0;
 }
 
 void servoTorque(bool enable) {
-    st.EnableTorque(MOTOR_ID, enable ? 1 : 0);
+    if(lockServoBus()) {
+        st.EnableTorque(MOTOR_ID, enable ? 1 : 0);
+        unlockServoBus();
+    }
 }
 
 void setActiveSpeed(int speed) {

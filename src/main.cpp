@@ -11,6 +11,7 @@
 #include "wifi_manager.h"
 #include "alpaca_handlers.h"
 #include "display_control.h"
+#include "ota_update.h"
 
 // ============================================================================
 // CONFIGURATION
@@ -55,6 +56,10 @@ void setup() {
     Serial.println("Setting up web server endpoints...");
     setupWiFiEndpoints(server);
     setupAlpacaEndpoints(server);
+
+    // Enable authenticated wireless firmware uploads from VS Code / PlatformIO
+    Serial.println("Initializing OTA updates...");
+    initOTAUpdate();
     
     // 404 handler
     server.onNotFound([](AsyncWebServerRequest *request) {
@@ -80,8 +85,15 @@ void setup() {
 // ============================================================================
 
 void loop() {
-    // Update servo feedback regularly
-    getFeedback();
+    // The main loop is the single owner of regular serial feedback reads.
+    // Alpaca endpoints consume the cached values without touching the bus.
+    static unsigned long lastServoFeedback = 0;
+    unsigned long now = millis();
+    if(now - lastServoFeedback >= 50) {
+        getFeedback();
+        lastServoFeedback = millis();
+    }
+    updateServoMovementState();
     
     // Update OLED display
     updateDisplay();
@@ -91,6 +103,9 @@ void loop() {
     
     // Handle ALPACA discovery packets (for ASCOM auto-detection)
     handleDiscovery();
+
+    // Handle wireless PlatformIO / VS Code firmware uploads
+    processOTAUpdate();
     
     // Small delay to prevent watchdog issues
     delay(1);

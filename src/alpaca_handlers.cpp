@@ -2,15 +2,12 @@
 #include "servo_control.h"
 #include <WiFiUdp.h>
 
-// Constants for Sync calculation (same as in servo_control.cpp)
-#define GEAR_RATIO 2.0
-#define SERVO_STEPS 4096.0
-#define SERVO_ANGLE_RANGE 360.0
-
 // Device status
 static bool isConnected = false;
 static bool reverseState = false;
 static String deviceName = "MoMa Rotator";
+static double syncOffsetDegrees = 0.0;
+static double alpacaTargetPosition = 0.0;
 
 // UDP Discovery
 static WiFiUDP udp;
@@ -19,6 +16,16 @@ static IPAddress multicastAddress(233, 255, 255, 255);
 static char packetBuffer[255];
 static int alpacaPortGlobal = 80;
 static bool udpInitialized = false;
+
+static double normalizeAngle(double angle) {
+    while(angle >= 360.0) angle -= 360.0;
+    while(angle < 0.0) angle += 360.0;
+    return angle;
+}
+
+static double getSyncedPosition() {
+    return normalizeAngle(getServoAngle() + syncOffsetDegrees);
+}
 
 // ============================================================================
 // INITIALIZATION
@@ -37,6 +44,17 @@ void initDiscovery(int alpacaPort) {
 }
 
 void setupAlpacaEndpoints(AsyncWebServer &server) {
+    // Position is the sky position angle. MechanicalPosition remains the raw
+    // rotator angle; Sync only establishes the offset between the two.
+    //
+    // Mode 3 has only a virtual mechanical zero which is reset at every boot.
+    // A persisted sky offset would therefore refer to an obsolete mechanical
+    // coordinate system and corrupt the first move after reconnecting.
+    syncOffsetDegrees = 0.0;
+    alpacaTargetPosition = getSyncedPosition();
+
+    Serial.println("Rotator sync offset reset; waiting for plate-solve Sync");
+
     // ASCOM Alpaca Management Endpoints
     server.on("/management/v1/description", HTTP_GET, handleDescription);
     server.on("/management/apiversions", HTTP_GET, handleApiVersion);
@@ -189,6 +207,9 @@ void handleSetConnected(AsyncWebServerRequest *request) {
         return;
     }
     isConnected = request->arg("Connected").equalsIgnoreCase("true");
+    if(isConnected) {
+        alpacaTargetPosition = getSyncedPosition();
+    }
     doc["Value"] = isConnected;
     sendJSONResponse(request, doc, 0);
 }
@@ -196,6 +217,7 @@ void handleSetConnected(AsyncWebServerRequest *request) {
 void handleConnect(AsyncWebServerRequest *request) {
     JsonDocument doc;
     isConnected = true;
+    alpacaTargetPosition = getSyncedPosition();
     sendJSONResponse(request, doc, 0);
 }
 
@@ -287,7 +309,7 @@ void handleMechanicalPosition(AsyncWebServerRequest *request) {
 
 void handlePosition(AsyncWebServerRequest *request) {
     JsonDocument doc;
-    doc["Value"] = getServoAngle();
+    doc["Value"] = getSyncedPosition();
     sendJSONResponse(request, doc, 0);
 }
 
@@ -300,7 +322,8 @@ void handleGetReverse(AsyncWebServerRequest *request) {
 void handleSetReverse(AsyncWebServerRequest *request) {
     JsonDocument doc;
     String reverseStr = request->arg("Reverse");
-    reverseState = (reverseStr == "true");
+    reverseState = reverseStr.equalsIgnoreCase("true");
+    setReverseDirection(reverseState);
     sendJSONResponse(request, doc, 0);
 }
 
@@ -313,28 +336,31 @@ void handleStepSize(AsyncWebServerRequest *request) {
 
 void handleTargetPosition(AsyncWebServerRequest *request) {
     JsonDocument doc;
-    doc["Value"] = getServoAngle();
+    doc["Value"] = alpacaTargetPosition;
     sendJSONResponse(request, doc, 0);
 }
 
 void handleHalt(AsyncWebServerRequest *request) {
     JsonDocument doc;
     stopServo();
+    alpacaTargetPosition = getSyncedPosition();
     sendJSONResponse(request, doc, 0);
 }
 
 void handleMove(AsyncWebServerRequest *request) {
     JsonDocument doc;
     double value = request->arg("Position").toDouble();
-    double currentAngle = getServoAngle();
-    double newPosition = currentAngle + value;
+    double newPosition = normalizeAngle(getSyncedPosition() + value);
 
-    // Validate range
-    if (newPosition < 0.0 || newPosition > 359.99) {
+    if (value < -360.0 || value > 360.0) {
         sendJSONResponse(request, doc, 1025);
     } else {
-        sendJSONResponse(request, doc, 0);
-        moveServoByAngle(value);
+        if(moveServoByAngle(value)) {
+            alpacaTargetPosition = newPosition;
+            sendJSONResponse(request, doc, 0);
+        } else {
+            sendJSONResponse(request, doc, 1025);
+        }
     }
 }
 
@@ -345,8 +371,13 @@ void handleMoveAbsolute(AsyncWebServerRequest *request) {
     if (value < 0.0 || value > 359.99) {
         sendJSONResponse(request, doc, 1025);
     } else {
-        sendJSONResponse(request, doc, 0);
-        moveServoToAngle(value);
+        double mechanicalTarget = normalizeAngle(value - syncOffsetDegrees);
+        if(moveServoToAngle(mechanicalTarget)) {
+            alpacaTargetPosition = value;
+            sendJSONResponse(request, doc, 0);
+        } else {
+            sendJSONResponse(request, doc, 1025);
+        }
     }
 }
 
@@ -357,28 +388,36 @@ void handleMoveMechanical(AsyncWebServerRequest *request) {
     if (value < 0.0 || value > 359.99) {
         sendJSONResponse(request, doc, 1025);
     } else {
-        sendJSONResponse(request, doc, 0);
-        moveServoToAngle(value);
+        // Mechanical moves deliberately ignore the plate-solve Sync offset.
+        if(moveServoToAngle(value)) {
+            alpacaTargetPosition = value;
+            sendJSONResponse(request, doc, 0);
+        } else {
+            sendJSONResponse(request, doc, 1025);
+        }
     }
 }
 
 void handleSync(AsyncWebServerRequest *request) {
     JsonDocument doc;
     double value = request->arg("Position").toDouble();
-    
-    // Sync: Set virtual position to specified angle without moving motor
-    // Convert gear angle to motor steps
-    double motorDegrees = value * GEAR_RATIO;  // GEAR_RATIO = 2.0
-    int targetSteps = (int)((motorDegrees / 360.0) * 4096.0);
-    
-    // Update current position to synced value
-    setCurrentTargetPosition(targetSteps);
-    
+
+    if (value < 0.0 || value > 359.99) {
+        sendJSONResponse(request, doc, 1025);
+        return;
+    }
+
+    double mechanicalPosition = getServoAngle();
+    syncOffsetDegrees = normalizeAngle(value - mechanicalPosition);
+    alpacaTargetPosition = value;
+
     Serial.print("Synced to ");
     Serial.print(value);
-    Serial.print("° (steps: ");
-    Serial.print(targetSteps);
-    Serial.println(")");
+    Serial.print("° at mechanical position ");
+    Serial.print(mechanicalPosition);
+    Serial.print("° (offset ");
+    Serial.print(syncOffsetDegrees);
+    Serial.println("°)");
     
     sendJSONResponse(request, doc, 0);
 }

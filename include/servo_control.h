@@ -5,8 +5,8 @@ void initServo();
 int scanForMotor();  // Scan for motor ID on the bus
 
 // Movement functions
-void moveServoToAngle(double angleDeg);
-void moveServoByAngle(double deltaDeg);
+bool moveServoToAngle(double angleDeg);
+bool moveServoByAngle(double deltaDeg);
 void gotoPosition(int targetPosition, int currentPos);
 
 // Zero point and calibration
@@ -22,7 +22,9 @@ void setMode(int mode);
 
 // Status and feedback
 double getServoAngle();
+double getServoTargetAngle();
 void getFeedback();
+void updateServoMovementState();
 bool isServoMoving();
 bool isMotorBlocked();
 int getServoLoad();
