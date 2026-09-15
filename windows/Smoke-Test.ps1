@@ -27,6 +27,15 @@ try {
 } finally {
     if ($null -ne $driver) {
         try { if ($driver.Connected) { $driver.Connected = $false } }
-        finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($driver) | Out-Null }
+        finally {
+            # A .NET Framework COM class can be returned as its managed object.
+            # FinalReleaseComObject is valid only for a real COM wrapper (RCW).
+            if ([Runtime.InteropServices.Marshal]::IsComObject($driver)) {
+                [Runtime.InteropServices.Marshal]::FinalReleaseComObject($driver) | Out-Null
+            } elseif ($driver -is [IDisposable]) {
+                $driver.Dispose()
+            }
+            $driver = $null
+        }
     }
 }
