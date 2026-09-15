@@ -1,4 +1,4 @@
-; Compile with Inno Setup 6.3+ on Windows (Build-Installer.ps1).
+﻿; Compile with Inno Setup 6 on Windows (Build-Installer.ps1).
 #ifndef AppVersion
   #define AppVersion "1.1.0"
 #endif
@@ -14,8 +14,8 @@ DefaultDirName={autopf}\Astro Orbit USB ASCOM
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 MinVersion=10.0
 OutputDir=..\dist
 OutputBaseFilename=Astro-Orbit-ASCOM-Setup-{#AppVersion}
@@ -64,9 +64,12 @@ begin
 end;
 
 function InitializeSetup(): Boolean;
+var
+  FrameworkRelease: Cardinal;
 begin
   Result := False;
-  if not IsDotNetInstalled(net48, 0) then begin
+  if (not RegQueryDWordValue(HKLM32, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', FrameworkRelease)) or
+     (FrameworkRelease < 528040) then begin
     MsgBox('Astro Orbit benötigt .NET Framework 4.8 oder neuer. Bitte zuerst installieren.', mbError, MB_OK);
     Exit;
   end;
