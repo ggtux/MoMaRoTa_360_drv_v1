@@ -11,7 +11,7 @@
 
 ```
 ┌────────────────────────────┐
-│ MoMa Rotator              │  ← Zeile 1: Titel
+│ Astro Orbit              │  ← Zeile 1: Titel
 │ ID:1 Mode:3               │  ← Zeile 2: Motor-ID & Mode
 │ Pos: 123.4 deg           │  ← Zeile 3: Aktuelle Position
 │ 192.168.1.100            │  ← Zeile 4: IP-Adresse
@@ -27,10 +27,10 @@
 
 ### Startup-Nachrichten
 Beim Booten werden verschiedene Status-Nachrichten angezeigt:
-1. "MoMa Rotator" + "Initializing..."
+1. "Astro Orbit" + "Initializing..."
 2. "Initializing" + "Servo..."
 3. "Connecting" + "WiFi..."
-4. "MoMa Rotator" + "Ready!" + IP-Adresse
+4. "Astro Orbit" + "Ready!" + IP-Adresse
 
 ### Display On/Off
 - **Case 20**: Display ausschalten (spart Strom)
@@ -136,7 +136,7 @@ displayOn();   // Display einschalten
 ### Übernommene Funktionen
 ✅ `InitScreen()` → `initDisplay()`
 ✅ `screenUpdate()` → `updateDisplay()` + `displayMotorInfo()`
-✅ Display-Layout mit MoMaRota Titel
+✅ Display-Layout mit Astro Orbit Titel
 ✅ Anzeige von ID, Mode, Position, IP
 
 ### Angepasst für AsyncWebServer
@@ -153,7 +153,7 @@ displayOn();   // Display einschalten
 ## Erwartete Serial-Ausgabe beim Start
 
 ```
-=== MoMa Rotator - ALPACA Driver ===
+=== Astro Orbit - ALPACA Driver ===
 Initializing OLED display...
 SSD1306 Display initialized
 Initializing servo...

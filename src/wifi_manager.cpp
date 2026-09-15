@@ -3,7 +3,7 @@
 #include "display_control.h"
 
 // Access Point configuration
-const char *apSSID = "MoMaRoTa";
+const char *apSSID = "Astro Orbit";
 IPAddress apIP(192, 168, 1, 1);
 static DNSServer dnsServer;
 static Preferences preferences;
@@ -305,7 +305,7 @@ void handleCaptivePortal(AsyncWebServerRequest *request) {
 void handleSetupPage(AsyncWebServerRequest *request) {
     String html = "<!DOCTYPE html><html><head>";
     html += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-    html += "<title>MoMa Rotator Setup</title>";
+    html += "<title>Astro Orbit Setup</title>";
     html += "<style>";
     html += "html{font-family:Arial;background:#181818;color:#ededed}";
     html += "body{max-width:360px;margin:0 auto;padding:20px;background:rgb(27,90,76);border-radius:12px;box-shadow:0 0 8px #111}";
@@ -317,7 +317,7 @@ void handleSetupPage(AsyncWebServerRequest *request) {
     html += ".divider{border-top:2px solid #555;margin:20px 0;width:100%}";
     html += "</style>";
     html += "</head><body>";
-    html += "<h2>MoMa Rotator Setup</h2>";
+    html += "<h2>Astro Orbit Setup</h2>";
     html += "<a href='/setup/v1/rotator/0/wifi' class='button'>WiFi Settings</a>";
     html += "<a href='/setup/v1/rotator/0/configdevices' class='button'>Rotator Control</a>";
     html += "<div class='divider'></div>";
@@ -435,7 +435,7 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     // Embedded HTML for control panel
     String html = "<!DOCTYPE html><html><head>";
     html += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-    html += "<title>MoMa Rotator Panel</title>";
+    html += "<title>Astro Orbit Panel</title>";
     html += "<style>";
     html += "html{font-family:Arial;background:#181818;color:#ededed}";
     html += "body{max-width:360px;margin:0 auto;padding:20px;background:rgb(27,90,76);border-radius:12px;box-shadow:0 0 8px #111}";
@@ -453,7 +453,7 @@ void handleConfigDevices(AsyncWebServerRequest *request) {
     html += ".section-title{text-align:center;font-size:1.2rem;margin:15px 0 10px;color:#fdc100}";
     html += ".output-line{display:flex;color:#ccc;font-size:0.95em;justify-content:center;margin-top:20px}";
     html += "</style></head><body>";
-    html += "<h2>Rotator Panel</h2>";
+    html += "<h2>Astro Orbit Panel</h2>";
     html += "<div class='centered' style='flex-direction:column'>";
     html += "<label>Position in &deg;</label>";
     html += "<div class='output-field' id='virtual-pos'>0.0</div></div>";

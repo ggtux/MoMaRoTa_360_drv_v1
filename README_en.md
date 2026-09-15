@@ -1,4 +1,4 @@
-# MoMa Rotator - ASCOM Alpaca Driver (English)
+# Astro Orbit - ASCOM Alpaca Driver (English)
 
 An ASCOM Alpaca-compatible driver for an astronomical field rotator.
 Uses ESP32 with ST3215 servo motor in Mode 3 (Motor Mode).

@@ -6,7 +6,7 @@
 #include "wifi_manager.h"
 
 namespace {
-const char *OTA_HOSTNAME = "moma-rotator";
+const char *OTA_HOSTNAME = "astro-orbit";
 bool otaEnabled = false;
 unsigned int lastProgressPercent = 101;
 }

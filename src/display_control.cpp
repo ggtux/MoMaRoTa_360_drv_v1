@@ -34,7 +34,7 @@ void initDisplay() {
     displayEnabled = true;
     
     // Show startup message
-    displayMessage("MoMa Rotator", "Initializing...");
+    displayMessage("Astro Orbit", "Initializing...");
     delay(1000);
 }
 
@@ -86,7 +86,7 @@ void displayMotorInfo() {
     display.setCursor(0, 0);
     
     // Line 1: Title
-    display.println(F("MoMa Rotator"));
+    display.println(F("Astro Orbit"));
     
     // Line 2: Motor ID & Mode
     display.print(F("ID:"));

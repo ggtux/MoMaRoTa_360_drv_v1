@@ -1,5 +1,5 @@
 // ============================================================================
-// MoMa Rotator - ASCOM Alpaca Rotator Driver
+// Astro Orbit - ASCOM Alpaca Rotator Driver
 // ============================================================================
 // This is an ALPACA-compatible driver for an astronomical field rotator
 // Uses ESP32 with ST3215 servo motor in Mode 3 (Motor Mode)
@@ -32,7 +32,7 @@ AsyncWebServer server(ALPACA_PORT);
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n\n=== MoMa Rotator - ALPACA Driver ===");
+    Serial.println("\n\n=== Astro Orbit - ALPACA Driver ===");
     
     // Initialize OLED Display
     Serial.println("Initializing OLED display...");
@@ -76,7 +76,7 @@ void setup() {
     Serial.println("Ready for ALPACA connections");
     
     // Show ready message
-    displayMessage("MoMa Rotator", "Ready!", getIPAddress().c_str());
+    displayMessage("Astro Orbit", "Ready!", getIPAddress().c_str());
     delay(2000);
 }
 

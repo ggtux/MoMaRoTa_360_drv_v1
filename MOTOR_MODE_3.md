@@ -2,7 +2,7 @@
 
 ## Status: ✅ Vollständig implementiert
 
-Der MoMa Rotator Driver verwendet **ausschließlich Motor-Mode (Mode 3)** des ST3215 Servos.
+Der Astro Orbit Driver verwendet **ausschließlich Motor-Mode (Mode 3)** des ST3215 Servos.
 
 ## Wichtige Änderungen
 

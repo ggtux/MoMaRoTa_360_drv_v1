@@ -1,4 +1,4 @@
-# MoMa Rotator - ASCOM Alpaca Driver
+# Astro Orbit - ASCOM Alpaca Driver
 
 Ein ASCOM Alpaca-kompatibler Treiber für einen astronomischen Bildfeldrotator.
 Verwendet ESP32 mit ST3215 Servo-Motor im Mode 3 (Motor Mode).
@@ -73,14 +73,14 @@ OLED Display-Steuerung (optimiert aus parkplatz/BOARD_DEV.h):
 
 ### WiFi Modi
 1. **STA Mode**: Verbindung zu bekanntem WLAN
-2. **AP Mode**: Fallback als Access Point "MoMaRoTa"
+2. **AP Mode**: Fallback als Access Point "Astro Orbit"
 3. **Captive Portal**: Automatische Umleitung zur Konfiguration
 
 ## Verwendung
 
 ### Erste Inbetriebnahme
 1. ESP32 mit Strom versorgen
-2. Nach "MoMaRoTa" WLAN suchen und verbinden
+2. Nach "Astro Orbit" WLAN suchen und verbinden
 3. Browser öffnet automatisch Setup-Seite (oder zu 192.168.1.1)
 4. WiFi-Einstellungen konfigurieren
 5. Nach Neustart verbindet sich das Gerät mit dem WLAN
@@ -142,7 +142,7 @@ Die neue Struktur trennt klar zwischen:
 
 - **Driver Version**: 1.0
 - **Interface Version**: 3 (ALPACA)
-- **Manufacturer**: MoMa
+- **Manufacturer**: Astro Orbit
 
 ## Autor
 

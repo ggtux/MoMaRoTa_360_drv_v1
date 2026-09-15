@@ -1,4 +1,4 @@
-# MoMa Rotator - Projekt-Struktur
+# Astro Orbit - Projekt-Struktur
 
 ## Datei-Übersicht
 

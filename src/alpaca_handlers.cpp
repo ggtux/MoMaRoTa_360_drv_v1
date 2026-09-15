@@ -5,7 +5,7 @@
 // Device status
 static bool isConnected = false;
 static bool reverseState = false;
-static String deviceName = "MoMa Rotator";
+static String deviceName = "Astro Orbit";
 static double syncOffsetDegrees = 0.0;
 static double alpacaTargetPosition = 0.0;
 
@@ -164,9 +164,9 @@ void handleDiscovery() {
 void handleDescription(AsyncWebServerRequest *request) {
     JsonDocument doc;
     JsonObject value = doc["Value"].to<JsonObject>();
-    value["Manufacturer"] = "MoMa";
+    value["Manufacturer"] = "Astro Orbit";
     value["ManufacturerVersion"] = "1.0";
-    value["ServerName"] = "MoMa Rotator";
+    value["ServerName"] = "Astro Orbit";
     sendJSONResponse(request, doc, 0);
 }
 
@@ -182,7 +182,7 @@ void handleConfiguredDevices(AsyncWebServerRequest *request) {
     JsonArray value = doc["Value"].to<JsonArray>();
 
     JsonObject device = value.add<JsonObject>();
-    device["DeviceName"] = "Rotator";
+    device["DeviceName"] = deviceName;
     device["DeviceType"] = "Rotator";
     device["DeviceNumber"] = 0;
     device["UniqueID"] = "6109ff28-84d0-4f79-aa90-05ef3c191f50";
@@ -246,13 +246,13 @@ void handleGetDescription(AsyncWebServerRequest *request) {
         sendJSONResponse(request, doc, 1025);
         return;
     }
-    doc["Value"] = String("MoMa Rotator");
+    doc["Value"] = String("Astro Orbit");
     sendJSONResponse(request, doc, 0);
 }
 
 void handleDriverInfo(AsyncWebServerRequest *request) {
     JsonDocument doc;
-    doc["Value"] = "MoMa DIY Rotator";
+    doc["Value"] = "Astro Orbit";
     sendJSONResponse(request, doc, 0);
 }
 
