@@ -9,3 +9,6 @@
 windows/**/bin/
 windows/**/obj/
 *.user
+
+# Generated Windows installer
+windows/dist/

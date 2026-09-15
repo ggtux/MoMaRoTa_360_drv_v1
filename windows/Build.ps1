@@ -10,5 +10,5 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Driver build failed.' }
     $output = Join-Path $PSScriptRoot 'Driver\bin\Release\net48'
     Write-Host "Build successful: $output" -ForegroundColor Green
-    Write-Host 'Next: open Windows PowerShell as administrator and run Register-Driver.ps1.'
+    Write-Host 'For a shareable setup EXE run Build-Installer.ps1; for manual installation run Register-Driver.ps1 as administrator.'
 } finally { Pop-Location }

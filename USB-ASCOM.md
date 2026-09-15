@@ -7,15 +7,66 @@ USB-Seriell-Verbindung mit 115200 Baud. Der C#-Treiber heißt im ASCOM-Auswahldi
 **Astro Orbit** und implementiert `IRotatorV3`.
 
 Der Quellcode liegt in `windows/Driver`. Es handelt sich um eine klassische
-.NET-Framework-4.8-COM-DLL; für diese Version ist keine Setup-EXE nötig.
-Das PowerShell-Skript kopiert die DLL samt Abhängigkeiten an einen festen Ort
-und registriert sie für 32- und 64-Bit-ASCOM-Anwendungen.
+.NET-Framework-4.8-COM-DLL; die neue Setup-EXE installiert diese DLL automatisch.
+Der Setup-EXE-Installer oder alternativ das PowerShell-Skript kopiert die DLL
+samt Abhängigkeiten an einen festen Ort und registriert sie für 32- und
+64-Bit-ASCOM-Anwendungen.
 
 **Geprüft auf dem Mac:** ESP32-Firmware-Build, C#-Build gegen die offiziellen
 ASCOM-Schnittstellen und automatisierte Tests für das USB-Protokoll.
 **Noch auf Windows / Hardware zu prüfen:** COM-Registrierung, Setup-Dialog,
 USB-Verbindung, tatsächliche Drehrichtung/Positionierung und ASCOM Conform.
 Die neue Firmware wurde nicht auf einen angeschlossenen Rotator geflasht.
+
+## Setup-EXE zum Weitergeben erstellen
+
+Auf deinem **Windows-Build-Rechner** zusätzlich zum .NET 8 SDK
+[Inno Setup 6.3 oder neuer](https://jrsoftware.org/isdl.php) installieren.
+Danach im Unterordner `windows` eine normale PowerShell öffnen:
+
+```powershell
+
+
+```
+
+Das Skript führt den Treiber-Build einschließlich der Protokolltests aus und
+kompiliert anschließend den Installer. Ausgabe bei Version 1.1.0:
+
+```text
+windows\dist\Astro-Orbit-ASCOM-Setup-1.1.0.exe
+```
+
+**Diese einzelne EXE kannst du weitergeben.** Sie enthält Treiber und benötigte
+Bibliotheken, prüft .NET Framework 4.8 und die ASCOM-Profile-Registrierung,
+registriert beide COM-Architekturen und legt eine Windows-Deinstallation an.
+Die Versionsnummer übernimmt sie aus dem C#-Projekt. Mit einer neuen Version
+im selben Projekt wird dieselbe Installation aktualisiert.
+
+Falls der Inno-Compiler an einem anderen Ort installiert ist:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-Installer.ps1 -InnoCompiler "C:\Pfad\ISCC.exe"
+```
+
+**Auf dem Empfänger-PC:** ASCOM Platform 7.1+ und .NET Framework 4.8+ müssen
+vorhanden sein. Dann Setup-EXE starten, Administratorabfrage bestätigen und
+in der Astrosoftware **Astro Orbit** auswählen. COM-Port unter Properties / Setup
+festlegen. Die Schritte zum manuellen Registrieren weiter unten entfallen.
+Empfänger brauchen weder SDK noch Visual Studio noch Inno Setup.
+Der Installer prüft das Vorhandensein der Profile-Komponente in beiden Architekturen;
+er prüft nicht die genaue ASCOM-Plattformversion.
+
+Firmware und USB-Chip-Treiber installiert das Setup nicht. Der ESP32 muss bereits
+die USB-Firmware verwenden. Für die EXE gibt es derzeit keine digitale Signatur;
+Windows kann deshalb einen unbekannten Herausgeber anzeigen.
+
+**Prüfstand:** Installer-Quellen und Dateiliste sind vorbereitet und geprüft;
+Inno-Kompilierung und Installation sind auf diesem Mac nicht ausgeführt worden.
+Vor der Weitergabe den Windows-Build, Installation, Verbindung, kleine Bewegung,
+Halt, Aktualisierung und Deinstallation mit der Hardware prüfen. Die bekannte
+Sync-Einschränkung der Firmware ist im mitinstallierten README beschrieben.
+Bei einem fehlgeschlagenen Update ASCOM Platform prüfen und Setup erneut ausführen,
+um die COM-Registrierungen wiederherzustellen.
 
 ## 1. Windows vorbereiten
 
