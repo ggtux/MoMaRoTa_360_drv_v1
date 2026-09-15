@@ -41,3 +41,6 @@ bool getReverseDirection();
 int getCurrentTargetPosition();
 void setActiveSpeed(int speed);
 int getActiveSpeed();
+
+bool isServoFeedbackHealthy();
+const char* getServoMotionError();

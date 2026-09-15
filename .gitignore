@@ -4,3 +4,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# C# driver build products
+windows/**/bin/
+windows/**/obj/
+*.user

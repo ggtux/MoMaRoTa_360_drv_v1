@@ -1,10 +1,10 @@
 #include "alpaca_handlers.h"
 #include "servo_control.h"
 #include <WiFiUdp.h>
+#include "rotator_transport.h"
 
 // Device status
 static bool isConnected = false;
-static bool reverseState = false;
 static String deviceName = "Astro Orbit";
 static double syncOffsetDegrees = 0.0;
 static double alpacaTargetPosition = 0.0;
@@ -26,6 +26,16 @@ static double normalizeAngle(double angle) {
 static double getSyncedPosition() {
     return normalizeAngle(getServoAngle() + syncOffsetDegrees);
 }
+
+double rotatorPosition() { return getSyncedPosition(); }
+double rotatorTarget() { return alpacaTargetPosition; }
+void rotatorSetTarget(double v) { alpacaTargetPosition = normalizeAngle(v); }
+double rotatorSyncOffset() { return syncOffsetDegrees; }
+void rotatorSync(double v) {
+    syncOffsetDegrees = normalizeAngle(v - getServoAngle());
+    alpacaTargetPosition = v;
+}
+bool alpacaOwnsRotator() { return isConnected; }
 
 // ============================================================================
 // INITIALIZATION
@@ -55,39 +65,53 @@ void setupAlpacaEndpoints(AsyncWebServer &server) {
 
     Serial.println("Rotator sync offset reset; waiting for plate-solve Sync");
 
+    auto route = [&server](const char* path, WebRequestMethodComposite method,
+                           void (*handler)(AsyncWebServerRequest*)) {
+        server.on(path, method, [method, handler](AsyncWebServerRequest* request) {
+            RotatorControlGuard guard;
+            if(method == HTTP_PUT && usbOwnsRotator() && handler != handleHalt) {
+                JsonDocument doc;
+                doc["ErrorMessage"] = "Rotator is controlled over USB; disconnect USB first";
+                sendJSONResponse(request, doc, 1035);
+                return;
+            }
+            handler(request);
+        });
+    };
+
     // ASCOM Alpaca Management Endpoints
-    server.on("/management/v1/description", HTTP_GET, handleDescription);
-    server.on("/management/apiversions", HTTP_GET, handleApiVersion);
-    server.on("/management/v1/configureddevices", HTTP_GET, handleConfiguredDevices);
+    route("/management/v1/description", HTTP_GET, handleDescription);
+    route("/management/apiversions", HTTP_GET, handleApiVersion);
+    route("/management/v1/configureddevices", HTTP_GET, handleConfiguredDevices);
 
     // ASCOM Alpaca Common Device Endpoints
-    server.on("/api/v1/rotator/0/connected", HTTP_GET, handleGetConnected);
-    server.on("/api/v1/rotator/0/connected", HTTP_PUT, handleSetConnected);
-    server.on("/api/v1/rotator/0/connecting", HTTP_GET, handleGetConnecting);
-    server.on("/api/v1/rotator/0/connect", HTTP_PUT, handleConnect);
-    server.on("/api/v1/rotator/0/description", HTTP_GET, handleGetDescription);
-    server.on("/api/v1/rotator/0/devicestate", HTTP_GET, handleDeviceState);
-    server.on("/api/v1/rotator/0/disconnect", HTTP_PUT, handleDisconnect);
-    server.on("/api/v1/rotator/0/driverinfo", HTTP_GET, handleDriverInfo);
-    server.on("/api/v1/rotator/0/driverversion", HTTP_GET, handleDriverVersion);
-    server.on("/api/v1/rotator/0/interfaceversion", HTTP_GET, handleGetInterfaceVersion);
-    server.on("/api/v1/rotator/0/name", HTTP_GET, handleGetName);
-    server.on("/api/v1/rotator/0/supportedactions", HTTP_GET, handleSupportedActions);
+    route("/api/v1/rotator/0/connected", HTTP_GET, handleGetConnected);
+    route("/api/v1/rotator/0/connected", HTTP_PUT, handleSetConnected);
+    route("/api/v1/rotator/0/connecting", HTTP_GET, handleGetConnecting);
+    route("/api/v1/rotator/0/connect", HTTP_PUT, handleConnect);
+    route("/api/v1/rotator/0/description", HTTP_GET, handleGetDescription);
+    route("/api/v1/rotator/0/devicestate", HTTP_GET, handleDeviceState);
+    route("/api/v1/rotator/0/disconnect", HTTP_PUT, handleDisconnect);
+    route("/api/v1/rotator/0/driverinfo", HTTP_GET, handleDriverInfo);
+    route("/api/v1/rotator/0/driverversion", HTTP_GET, handleDriverVersion);
+    route("/api/v1/rotator/0/interfaceversion", HTTP_GET, handleGetInterfaceVersion);
+    route("/api/v1/rotator/0/name", HTTP_GET, handleGetName);
+    route("/api/v1/rotator/0/supportedactions", HTTP_GET, handleSupportedActions);
 
     // ASCOM Alpaca Rotator Specific Endpoints
-    server.on("/api/v1/rotator/0/canreverse", HTTP_GET, handleCanReverse);
-    server.on("/api/v1/rotator/0/ismoving", HTTP_GET, handleIsMoving);
-    server.on("/api/v1/rotator/0/mechanicalposition", HTTP_GET, handleMechanicalPosition);
-    server.on("/api/v1/rotator/0/position", HTTP_GET, handlePosition);
-    server.on("/api/v1/rotator/0/reverse", HTTP_GET, handleGetReverse);
-    server.on("/api/v1/rotator/0/reverse", HTTP_PUT, handleSetReverse);
-    server.on("/api/v1/rotator/0/stepsize", HTTP_GET, handleStepSize);
-    server.on("/api/v1/rotator/0/targetposition", HTTP_GET, handleTargetPosition);
-    server.on("/api/v1/rotator/0/halt", HTTP_PUT, handleHalt);
-    server.on("/api/v1/rotator/0/move", HTTP_PUT, handleMove);
-    server.on("/api/v1/rotator/0/moveabsolute", HTTP_PUT, handleMoveAbsolute);
-    server.on("/api/v1/rotator/0/movemechanical", HTTP_PUT, handleMoveMechanical);
-    server.on("/api/v1/rotator/0/sync", HTTP_PUT, handleSync);
+    route("/api/v1/rotator/0/canreverse", HTTP_GET, handleCanReverse);
+    route("/api/v1/rotator/0/ismoving", HTTP_GET, handleIsMoving);
+    route("/api/v1/rotator/0/mechanicalposition", HTTP_GET, handleMechanicalPosition);
+    route("/api/v1/rotator/0/position", HTTP_GET, handlePosition);
+    route("/api/v1/rotator/0/reverse", HTTP_GET, handleGetReverse);
+    route("/api/v1/rotator/0/reverse", HTTP_PUT, handleSetReverse);
+    route("/api/v1/rotator/0/stepsize", HTTP_GET, handleStepSize);
+    route("/api/v1/rotator/0/targetposition", HTTP_GET, handleTargetPosition);
+    route("/api/v1/rotator/0/halt", HTTP_PUT, handleHalt);
+    route("/api/v1/rotator/0/move", HTTP_PUT, handleMove);
+    route("/api/v1/rotator/0/moveabsolute", HTTP_PUT, handleMoveAbsolute);
+    route("/api/v1/rotator/0/movemechanical", HTTP_PUT, handleMoveMechanical);
+    route("/api/v1/rotator/0/sync", HTTP_PUT, handleSync);
 }
 
 // ============================================================================
@@ -315,15 +339,14 @@ void handlePosition(AsyncWebServerRequest *request) {
 
 void handleGetReverse(AsyncWebServerRequest *request) {
     JsonDocument doc;
-    doc["Value"] = reverseState;
+    doc["Value"] = getReverseDirection();
     sendJSONResponse(request, doc, 0);
 }
 
 void handleSetReverse(AsyncWebServerRequest *request) {
     JsonDocument doc;
     String reverseStr = request->arg("Reverse");
-    reverseState = reverseStr.equalsIgnoreCase("true");
-    setReverseDirection(reverseState);
+    setReverseDirection(reverseStr.equalsIgnoreCase("true"));
     sendJSONResponse(request, doc, 0);
 }
 
@@ -390,7 +413,7 @@ void handleMoveMechanical(AsyncWebServerRequest *request) {
     } else {
         // Mechanical moves deliberately ignore the plate-solve Sync offset.
         if(moveServoToAngle(value)) {
-            alpacaTargetPosition = value;
+            alpacaTargetPosition = normalizeAngle(value + syncOffsetDegrees);
             sendJSONResponse(request, doc, 0);
         } else {
             sendJSONResponse(request, doc, 1025);

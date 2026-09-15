@@ -12,6 +12,7 @@
 #include "alpaca_handlers.h"
 #include "display_control.h"
 #include "ota_update.h"
+#include "rotator_transport.h"
 
 // ============================================================================
 // CONFIGURATION
@@ -32,6 +33,7 @@ AsyncWebServer server(ALPACA_PORT);
 
 void setup() {
     Serial.begin(115200);
+    initRotatorTransport();
     Serial.println("\n\n=== Astro Orbit - ALPACA Driver ===");
     
     // Initialize OLED Display
@@ -87,13 +89,17 @@ void setup() {
 void loop() {
     // The main loop is the single owner of regular serial feedback reads.
     // Alpaca endpoints consume the cached values without touching the bus.
-    static unsigned long lastServoFeedback = 0;
-    unsigned long now = millis();
-    if(now - lastServoFeedback >= 50) {
-        getFeedback();
-        lastServoFeedback = millis();
+    {
+        RotatorControlGuard guard;
+        static unsigned long lastServoFeedback = 0;
+        unsigned long now = millis();
+        if(now - lastServoFeedback >= 50) {
+            getFeedback();
+            lastServoFeedback = millis();
+        }
+        updateServoMovementState();
+        processUsbRotator();
     }
-    updateServoMovementState();
     
     // Update OLED display
     updateDisplay();

@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "servo_control.h"
 #include "display_control.h"
+#include "rotator_transport.h"
 
 // Access Point configuration
 const char *apSSID = "Astro Orbit";
@@ -230,6 +231,11 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
     
     // Control panel command handler (register both short and full paths)
     auto cmdHandler = [](AsyncWebServerRequest *request) {
+        RotatorControlGuard guard;
+        if(usbOwnsRotator() && request->arg("inputI").toInt() != 2) {
+            request->send(409, "text/plain", "USB control active; disconnect USB first");
+            return;
+        }
         int cmdT = request->arg("inputT").toInt();
         int cmdI = request->arg("inputI").toInt();
         double cmdP = request->arg("inputP").toDouble();
@@ -238,8 +244,9 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
             case 1:  // 90° button
                 moveServoToAngle(90.0);
                 break;
-            case 2:  // Stop
+            case 2:  // Stop remains available during USB control.
                 stopServo();
+                rotatorSetTarget(rotatorPosition());
                 break;
             case 5:  // 180° button
                 moveServoToAngle(180.0);

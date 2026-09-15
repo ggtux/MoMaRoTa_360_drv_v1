@@ -2,6 +2,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "servo_control.h"
+#include "rotator_motion_math.h"
 
 // Hardware configuration
 #define S_RXD 18
@@ -51,6 +52,7 @@ s16 virtualZeroOffset = 0;
 bool reverseDirection = false;  // Reverse rotation direction
 int activeMovementCommandSign = MOTOR_BASE_DIRECTION;
 s16 absolutePosition = 0;  // Absolute accumulated position for display
+static int physicalCableSteps = 0; // Motor steps since boot, independent of Reverse.
 s16 lastPosRead = 0;  // Last posRead value for delta calculation
 
 // Feedback variables
@@ -84,6 +86,7 @@ unsigned long stoppedSinceMillis = 0;
 unsigned long lastProgressMillis = 0;
 int bestRemainingSteps = -1;
 double targetAngleDegrees = 0.0;
+static const char* motionError = "";
 
 // Motor block detection
 int feedbackRetries = 0;
@@ -293,6 +296,8 @@ void updateServoMovementState() {
 
     // Never retain a stale non-zero speed forever after communication loss.
     if(now - lastValidFeedbackMillis > FEEDBACK_TIMEOUT_MS) {
+        stopServo();
+        motionError = "Servo feedback timeout";
         Serial.println("Movement released: servo feedback timeout");
         movementActive = false;
         movementObserved = false;
@@ -306,6 +311,7 @@ void updateServoMovementState() {
     if(elapsed > MOVEMENT_TIMEOUT_MS) {
         Serial.println("Movement timeout: stopping servo and releasing Alpaca");
         stopServo();
+        motionError = "Movement timed out";
         return;
     }
 
@@ -323,6 +329,8 @@ void updateServoMovementState() {
             return;
         }
 
+        stopServo();
+        motionError = "No motor motion observed";
         Serial.println("Movement released: no motion observed after command");
         movementActive = false;
         movementObserved = false;
@@ -350,6 +358,7 @@ void updateServoMovementState() {
             if(moveRead == 1) {
                 Serial.println("Movement released: motor stopped with stale moving flag");
             }
+            if(remainingSteps > POSITION_REPORT_SNAP_STEPS) motionError = "Motor stopped before target";
             movementActive = false;
             movementObserved = false;
             stoppedSinceMillis = 0;
@@ -368,6 +377,7 @@ void updateServoMovementState() {
         Serial.print(remainingSteps);
         Serial.println(" steps remaining - stopping and releasing Alpaca");
         stopServo();
+        motionError = "Motor stalled";
         return;
     }
 }
@@ -428,41 +438,10 @@ static double stepsToOutputDegrees(int steps) {
     return (steps / SERVO_STEPS) * SERVO_ANGLE_RANGE / GEAR_RATIO;
 }
 
-static bool chooseCableSafeTarget(double wrappedTarget, double &unwrappedTarget) {
-    double currentCableAngle = stepsToOutputDegrees(absolutePosition);
-    bool found = false;
-    double bestDistance = 1000000.0;
-
-    // The same mechanical angle occurs every 360 degrees. Select the closest
-    // equivalent that remains inside the one-turn cable safety window.
-    for(int turn = -1; turn <= 1; turn++) {
-        double candidate = wrappedTarget + (360.0 * turn);
-        if(candidate < CABLE_MIN_ANGLE || candidate > CABLE_MAX_ANGLE) {
-            continue;
-        }
-
-        double distance = abs(candidate - currentCableAngle);
-        if(!found || distance < bestDistance) {
-            found = true;
-            bestDistance = distance;
-            unwrappedTarget = candidate;
-        }
-    }
-    return found;
-}
-
-bool moveServoToAngle(double angleDeg) {
-    // Wrap target angle to 0-359.99
-    while(angleDeg >= 360.0) angleDeg -= 360.0;
-    while(angleDeg < 0.0) angleDeg += 360.0;
+static bool moveServoToUnwrappedAngle(double cableTargetAngle) {
+    motionError = "";
+    const double angleDeg = RotatorMotion::wrap(cableTargetAngle);
     targetAngleDegrees = angleDeg;
-
-    double cableTargetAngle = 0.0;
-    if(!chooseCableSafeTarget(angleDeg, cableTargetAngle)) {
-        Serial.println("Move rejected: no target inside cable safety window");
-        movementActive = false;
-        return false;
-    }
 
     double currentCableAngle = stepsToOutputDegrees(absolutePosition);
     double deltaDeg = cableTargetAngle - currentCableAngle;
@@ -515,30 +494,31 @@ bool moveServoToAngle(double angleDeg) {
     unlockServoBus();
     currentTargetPosition += motorDelta;
     absolutePosition += logicalDelta;  // Always use logical delta for position tracking
+    physicalCableSteps += motorDelta;
     return true;
 }
 
-bool moveServoByAngle(double deltaDeg) {
-    double currentCableAngle = stepsToOutputDegrees(absolutePosition);
-    double requestedCableTarget = currentCableAngle + deltaDeg;
-
-    // A relative Move specifies its direction explicitly. Do not silently
-    // substitute the opposite direction when that would cross a cable limit.
-    if(requestedCableTarget < CABLE_MIN_ANGLE ||
-       requestedCableTarget > CABLE_MAX_ANGLE) {
-        Serial.print("Relative move rejected by cable guard: ");
-        Serial.print(currentCableAngle);
-        Serial.print("° -> ");
-        Serial.print(requestedCableTarget);
-        Serial.println("°");
-        movementActive = false;
+bool moveServoToAngle(double angleDeg) {
+    double cableTargetAngle;
+    if(!RotatorMotion::absoluteTarget(stepsToOutputDegrees(absolutePosition), angleDeg,
+                                    CABLE_MIN_ANGLE, CABLE_MAX_ANGLE, cableTargetAngle,
+                                    stepsToOutputDegrees(physicalCableSteps), getMotorCommandSign())) {
         return false;
     }
+    return moveServoToUnwrappedAngle(cableTargetAngle);
+}
 
-    double wrappedTarget = requestedCableTarget;
-    while(wrappedTarget >= 360.0) wrappedTarget -= 360.0;
-    while(wrappedTarget < 0.0) wrappedTarget += 360.0;
-    return moveServoToAngle(wrappedTarget);
+bool moveServoByAngle(double deltaDeg) {
+    double cableTargetAngle;
+    if(!RotatorMotion::relativeTarget(stepsToOutputDegrees(absolutePosition), deltaDeg,
+                                    CABLE_MIN_ANGLE, CABLE_MAX_ANGLE, cableTargetAngle,
+                                    stepsToOutputDegrees(physicalCableSteps), getMotorCommandSign())) {
+        Serial.println("Relative move rejected by cable guard");
+        return false;
+    }
+    // Preserve the requested direction and full turns. Wrapping here would
+    // incorrectly turn Move(360) into no motion and Move(270) into Move(-90).
+    return moveServoToUnwrappedAngle(cableTargetAngle);
 }
 
 double getServoAngle() {
@@ -624,6 +604,7 @@ void resetServoAngleZero() {
 // ============================================================================
 
 void stopServo() {
+    motionError = "";
     // Get current feedback before stopping
     getFeedback();
     
@@ -631,6 +612,7 @@ void stopServo() {
     // Convert the physical remaining steps back to logical ASCOM direction.
     int logicalRemaining = posRead * activeMovementCommandSign;
     absolutePosition = absolutePosition - logicalRemaining;
+    physicalCableSteps -= posRead;
     posRead = 0;
     
     if(lockServoBus()) {
@@ -681,3 +663,9 @@ int getActiveSpeed() {
 int getCurrentTargetPosition() {
     return currentTargetPosition;
 }
+
+bool isServoFeedbackHealthy() {
+    return lastValidFeedbackMillis != 0 && !motorBlocked &&
+           millis() - lastValidFeedbackMillis <= FEEDBACK_TIMEOUT_MS;
+}
+const char* getServoMotionError() { return motionError; }

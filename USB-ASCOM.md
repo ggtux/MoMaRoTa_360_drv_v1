@@ -1,0 +1,239 @@
+# Astro Orbit USB + ASCOM — Windows-Anleitung
+
+## Stand
+
+Die Firmware unterstützt jetzt zusätzlich zum vorhandenen WLAN/Alpaca eine
+USB-Seriell-Verbindung mit 115200 Baud. Der C#-Treiber heißt im ASCOM-Auswahldialog
+**Astro Orbit** und implementiert `IRotatorV3`.
+
+Der Quellcode liegt in `windows/Driver`. Es handelt sich um eine klassische
+.NET-Framework-4.8-COM-DLL; für diese Version ist keine Setup-EXE nötig.
+Das PowerShell-Skript kopiert die DLL samt Abhängigkeiten an einen festen Ort
+und registriert sie für 32- und 64-Bit-ASCOM-Anwendungen.
+
+**Geprüft auf dem Mac:** ESP32-Firmware-Build, C#-Build gegen die offiziellen
+ASCOM-Schnittstellen und automatisierte Tests für das USB-Protokoll.
+**Noch auf Windows / Hardware zu prüfen:** COM-Registrierung, Setup-Dialog,
+USB-Verbindung, tatsächliche Drehrichtung/Positionierung und ASCOM Conform.
+Die neue Firmware wurde nicht auf einen angeschlossenen Rotator geflasht.
+
+## 1. Windows vorbereiten
+
+Vorgesehener erster Testrechner: Windows 11 x64.
+
+1. [ASCOM Platform](https://ascom-standards.org/Downloads/Index.htm) installieren,
+   Version 7.1 oder neuer. Die Plattform liefert auch die Profile-Komponente,
+   die das Registrierungsskript benötigt.
+2. Das **.NET 8 SDK für Windows x64** von
+   [Microsoft](https://dotnet.microsoft.com/download/dotnet/8.0) installieren.
+   Das SDK wählen, nicht nur die Runtime. Visual Studio ist nicht erforderlich.
+3. Ein neues PowerShell-Fenster öffnen. `dotnet --list-sdks` muss eine 8.0-Version
+   zeigen. .NET Framework 4.8 oder neuer wird für die fertige DLL benötigt;
+   auf Windows 11 ist das normalerweise vorhanden. Die Referenzdateien zum
+   Kompilieren lädt das Projekt automatisch über NuGet.
+4. Diesen vollständigen Projektordner auf den PC kopieren, zum Beispiel nach
+   `C:\Astro\MoMaRoTa_360_drv_v1`. Ein ZIP zuerst vollständig entpacken.
+
+Der erste Build braucht Internet für die festgelegten NuGet-Pakete.
+Windows ARM ist noch nicht geprüft; für den ersten Test x64 verwenden.
+
+## 2. Treiber kompilieren
+
+Eine normale PowerShell öffnen, noch nicht als Administrator:
+
+```powershell
+cd C:\Astro\MoMaRoTa_360_drv_v1\windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build.ps1
+```
+
+`ExecutionPolicy Bypass` gilt nur für diesen Prozess; die systemweite Richtlinie
+wird nicht geändert. Das Skript führt zuerst die 15 Protokolltests aus und baut
+danach den Treiber. Erwartetes Ende: **Build successful**.
+
+Die DLL steht danach hier:
+
+```text
+windows\Driver\bin\Release\net48\ASCOM.MoMaRoTa.Rotator.dll
+```
+
+Alle DLLs im Ausgabeordner gehören zusammen. Nicht nur die einzelne Treiber-DLL
+auf einen anderen Rechner kopieren.
+
+## 3. Treiber registrieren
+
+Astrosoftware vorher schließen. **Windows PowerShell als Administrator** öffnen:
+
+```powershell
+cd C:\Astro\MoMaRoTa_360_drv_v1\windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Register-Driver.ps1
+```
+
+Die Dateien landen in `C:\Program Files\Astro Orbit USB ASCOM`.
+Das Skript registriert auf x64-Windows beide COM-Architekturen. Die RegAsm-Warnung
+zu `/codebase` und einer nicht signierten Assembly ist für diesen Entwicklungsbuild
+zu erwarten; sie ist kein Buildfehler. Die DLL bleibt am installierten Ort.
+
+Danach wieder eine **normale Windows PowerShell** öffnen:
+
+```powershell
+cd C:\Astro\MoMaRoTa_360_drv_v1\windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Smoke-Test.ps1
+```
+
+Dieser erste Test lädt nur den COM-Treiber und liest Name/Version. Er öffnet
+keinen COM-Port und bewegt den Motor nicht. Erwartet: **Smoke test passed**.
+
+Für einen zusätzlichen 32-Bit-Aktivierungstest:
+
+```powershell
+& "$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File .\Smoke-Test.ps1
+```
+
+## 4. Neue Firmware aufspielen
+
+Die Firmware lässt sich wie bisher am Mac mit PlatformIO bauen und per USB
+hochladen. Im **Firmware-Projektordner**:
+
+```sh
+pio run -e esp32dev
+pio run -e esp32dev -t upload
+```
+
+Falls mehrere Geräte angeschlossen sind, den richtigen Upload-Port explizit
+angeben. Alternativ die PlatformIO-Build/Upload-Schaltflächen in VS Code verwenden.
+Die bisherige OTA-Umgebung bleibt verfügbar. Ein erfolgreicher Build allein
+aktualisiert den ESP32 noch nicht.
+
+USB verbindet den PC mit dem ESP32. Die vorhandene separate Motorversorgung
+muss ebenfalls angeschlossen sein; USB allein ersetzt sie nicht.
+Nach dem Upload **seriellen Monitor schließen**, bevor der ASCOM-Treiber verbindet.
+
+## 5. USB-Verbindung testen
+
+1. Rotator per Daten-USB-Kabel mit dem Windows-PC verbinden.
+2. Im Geräte-Manager unter **Anschlüsse (COM & LPT)** den Port ermitteln.
+   Falls kein Port erscheint: Datenkabel und den zum tatsächlich verbauten
+   USB-Seriell-Chip passenden Herstellertreiber prüfen.
+3. Eine vorhandene Alpaca-Verbindung in der Astrosoftware trennen.
+4. In normaler Windows PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Smoke-Test.ps1 -Connect
+```
+
+Im Setup den COM-Port wählen und **Save** drücken. Der Test verbindet,
+liest Position/Bewegungsstatus und trennt wieder, ohne einen Fahrbefehl zu senden.
+Einige ESP32-Boards starten beim Öffnen des Ports trotz deaktiviertem DTR/RTS neu.
+Der Treiber wartet beim Verbindungsaufbau bis zu 60 Sekunden auf die Firmware;
+ein bestehender WLAN-Verbindungsversuch kann etwa 30 Sekunden dauern.
+
+## 6. Erste kleine Bewegung
+
+Den Kabelweg frei halten und mit einer kleinen Bewegung beginnen:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Smoke-Test.ps1 -Connect -MoveDegrees 5
+```
+
+Dieser Aufruf bewegt den Rotator tatsächlich um +5°. Das Skript akzeptiert nur
+Werte zwischen -5 und +5 Grad. Es wartet auf `IsMoving = false` und liest danach
+Position und Ziel. Stopp und Drehrichtung anschließend auch in der Astrosoftware
+prüfen. Ein Software-Stopp kann einen elektrisch nicht mehr erreichbaren Motor
+nicht garantiert anhalten.
+
+## 7. In der Astrosoftware verwenden
+
+Als ASCOM-Rotator **Astro Orbit** auswählen, unter **Properties / Setup**
+den COM-Port speichern und verbinden. Der serielle Monitor und andere USB-Clients
+müssen geschlossen sein. Diese DLL unterstützt eine USB-Client-Verbindung zur Zeit;
+für mehrere unabhängige Anwendungen ist in dieser Version kein gemeinsamer
+LocalServer/Hub implementiert.
+
+Verfügbare Funktionen: Position, MechanicalPosition, TargetPosition, IsMoving,
+Move, MoveAbsolute, MoveMechanical, Sync, Halt und Reverse.
+Eine Bewegung läuft asynchron; über `IsMoving` auf ihr Ende warten. Ein weiterer
+Fahrbefehl, Sync oder Reverse während einer Bewegung wird abgewiesen; zuerst Halt.
+
+### Nullpunkt und Sync
+
+Die bestehende Mode-3-Firmware hat **keinen referenzierten absoluten Nullpunkt**.
+Beim ESP32-Neustart ist die aktuelle Stellung wieder der virtuelle mechanische
+Nullpunkt. Deshalb nach jedem Neustart neu plate-solven und `Sync` durchführen.
+USB und Alpaca teilen sich denselben Sync-Versatz; ein normaler USB-Reconnect ohne
+ESP32-Neustart löscht ihn nicht. Der Treiber speichert Reverse auf dem Windows-PC.
+
+**Bekannte ASCOM-Einschränkung:** Der Sync-Versatz wird über einen Controller-Neustart
+hinweg nicht erhalten. ASCOM V3 sieht Persistenz vor. Ein alter Offset würde mit dem
+neu gesetzten virtuellen Nullpunkt eine falsche Himmelsposition ergeben. Diese
+Version übernimmt bewusst die bestehende Firmware-Eigenschaft und ist noch nicht
+als vollständig konform geprüft. Für persistente Himmelskoordinaten braucht es ein
+verlässliches Referenzierungs-/Positionskonzept, nicht nur das Speichern einer Zahl.
+
+Relative Befehle behalten jetzt ausdrücklich Richtung und volle Umdrehungen bei:
+`Move(270)` fährt +270°, nicht den kürzeren Weg -90°. Die bestehende
+Kabelbegrenzung (±360° ab Einschaltstellung) und die bisherige
+Positions-/Stopp-Erkennung werden weiterverwendet. Die bisherigen Toleranzen können
+kleine Restabweichungen auf den Sollwinkel setzen; daraus entsteht keine zusätzliche
+mechanische Genauigkeit. Diese Eigenschaften im Hardwaretest berücksichtigen.
+Die Kabelposition wird zusätzlich unabhängig von Reverse mitgeführt. Nach einem
+Richtungswechsel nahe einer Kabelgrenze kann ein Ziel deshalb abgewiesen werden;
+zuerst mit der bisherigen Richtung zurückdrehen. Ein Software-Nullsetzen setzt
+diesen Kabelzähler nicht zurück, ein Controller-Neustart dagegen schon.
+
+### USB / WLAN und Verbindungsverlust
+
+- Eine aktive Alpaca-Verbindung verhindert das Übernehmen durch USB.
+- Während USB verbunden ist, werden konkurrierende Alpaca-Schreibbefehle und
+  Web-Fahrbefehle abgewiesen. Lesen und **Halt / Web-Stopp** bleiben möglich.
+- Der Treiber sendet alle zwei Sekunden Statusabfragen als Lebenszeichen.
+- Nach mehr als 15 Sekunden ohne gültige USB-Sitzungsanfrage gibt die Firmware
+  die USB-Steuerung frei und versucht eine laufende Bewegung zu stoppen.
+- Nach einem Absturz kann die alte Sitzung daher bis zu 15 Sekunden blockieren.
+- Ein erkannter Neustart, Timeout oder Portfehler führt zum Verbindungsfehler;
+  der Treiber sendet einen Fahrbefehl **nicht automatisch erneut**.
+- Stall, fehlende Motorantwort oder Bewegungstimeout erscheinen als Treiberfehler,
+  statt durch `IsMoving = false` einen erfolgreichen Abschluss vorzutäuschen.
+
+## Aktualisieren / Entfernen
+
+Zum Aktualisieren alle Astroprogramme schließen, erneut `Build.ps1` ausführen und
+`Register-Driver.ps1` als Administrator starten.
+
+Zum Entfernen der Registrierung:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Register-Driver.ps1 -Unregister
+```
+
+Installationsdateien und Benutzereinstellungen bleiben erhalten.
+
+## Wenn etwas scheitert
+
+- **dotnet nicht gefunden:** SDK installieren und ein neues Terminal öffnen.
+- **Class not registered:** Registrierung in der richtigen Architektur prüfen;
+  beide RegAsm-Aufrufe müssen erfolgreich sein. ASCOM Platform gegebenenfalls reparieren.
+- **Zugriff auf COM-Port verweigert:** seriellen Monitor / zweite Anwendung schließen.
+- **Keine Antwort:** richtige Firmware, COM-Port und Datenkabel prüfen; bis zu
+  60 Sekunden Bootzeit abwarten. Das Protokoll ist erst mit dieser Firmware verfügbar.
+- **USB owned / Alpaca connected:** alte Verbindung trennen, nach einem Absturz
+  mindestens 15 Sekunden warten und erneut verbinden.
+- **Motor feedback unavailable:** separate Motorversorgung und Servo-Bus prüfen.
+
+Bei einem Fehler die vollständige Fehlermeldung und den betroffenen Schritt
+festhalten. Für die abschließende Prüfung den Treiber mit ASCOM Conform testen;
+Bewegungstests dabei nur am frei beweglichen, vorbereiteten Rotator ausführen.
+
+## Entwickler-Prüfungen
+
+```sh
+pio run -e esp32dev
+sh tests/run_host_tests.sh
+dotnet run --project windows/Tests/MoMaRoTa.ProtocolTests.csproj -c Release
+dotnet build windows/Driver/MoMaRoTa.Driver.csproj -c Release
+```
+
+Die C++-Tests kompilieren den echten USB-Transport mit simuliertem Servo und
+Arduino/RTOS-Adaptern. Sie prüfen nicht die reale Hardware oder Task-Synchronisierung.
+Die C#-Tests verwenden den echten Protokollcode mit einem simulierten seriellen Kanal;
+sie prüfen nicht Windows-COM oder USB-Treiber. Details des Nachrichtenformats stehen
+in `USB-PROTOCOL.md`.

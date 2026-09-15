@@ -1,3 +1,7 @@
+> **USB / Windows-ASCOM ergänzt:** Anleitung in [USB-ASCOM.md](USB-ASCOM.md),
+> C#-Treiber in `windows/Driver`, Protokoll in [USB-PROTOCOL.md](USB-PROTOCOL.md).
+> Firmware und C# sind gebaut; Windows-COM und Hardwaretest stehen noch aus.
+
 # Astro Orbit - ASCOM Alpaca Driver
 
 Ein ASCOM Alpaca-kompatibler Treiber für einen astronomischen Bildfeldrotator.
