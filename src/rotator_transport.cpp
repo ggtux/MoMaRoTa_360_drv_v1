@@ -64,7 +64,7 @@ void executeUsbRotator(JsonDocument& q, JsonDocument& r) {
         JsonObject v = r["value"].to<JsonObject>();
         v["device"] = "MoMaRoTa";
         v["protocol"] = 1;
-        v["firmware"] = "1.1.0-usb";
+        v["firmware"] = "1.2.2-usb";
         v["leaseMs"] = LeaseMs;
         return;
     }
@@ -92,6 +92,13 @@ void executeUsbRotator(JsonDocument& q, JsonDocument& r) {
         return;
     }
     if(cmd == "status") { status(r); return; }
+    if(cmd == "zero") {
+        if(isServoMoving()) { fail(r, 1035, "Rotator is moving; halt first"); return; }
+        setZeroPointExact();
+        rotatorSync(0.0);
+        rotatorSetTarget(0.0);
+        return;
+    }
     if(cmd == "halt") {
         stopServo(); rotatorSetTarget(rotatorPosition());
         if(!isServoFeedbackHealthy()) fail(r, 1280, "Stop sent but motor feedback is unavailable");

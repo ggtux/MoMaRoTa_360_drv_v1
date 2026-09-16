@@ -1,4 +1,4 @@
-Astro Orbit - USB ASCOM Rotator
+Astro Orbit 1.4.2 - USB ASCOM Rotator
 
 Voraussetzungen auf dem Ziel-PC:
 - Windows x64 (erster Hardwaretest vorgesehen auf Windows 11 x64)
@@ -9,7 +9,9 @@ Voraussetzungen auf dem Ziel-PC:
 
 Installation:
 Astro-Orbit-ASCOM-Setup ausführen und die Administratorabfrage bestätigen.
-Der Installer installiert die Bibliotheken und registriert 32- und 64-Bit-ASCOM.
+Der Installer installiert AstroOrbit.LocalServer.exe und die Bibliotheken.
+Er ersetzt alte DLL-Registrierungen durch den eigenen Treiberprozess für 32- und
+64-Bit-ASCOM. Dadurch läuft der Treiber unabhängig von NINAs .NET-Laufzeit.
 Ein SDK, Visual Studio oder Inno Setup wird auf dem Ziel-PC nicht benötigt.
 
 Verwendung:
@@ -27,7 +29,10 @@ und Deinstallation auf Windows mit der Hardware prüfen.
 
 Deinstallation: Windows Einstellungen > Apps > Astro Orbit USB ASCOM.
 COM-Port und Reverse-Einstellungen des Benutzers bleiben dabei erhalten.
-Astrosoftware vor Updates oder Deinstallation schließen.
+Astrosoftware vor Updates oder Deinstallation schließen. Ein verbliebener
+AstroOrbit.LocalServer-Prozess kann im Task-Manager beendet werden.
+Fehlerprotokoll: %LOCALAPPDATA%\Astro Orbit\Logs
+Aktuell ist eine aktive USB-Client-Verbindung gleichzeitig möglich.
 
 Dieses Setup installiert ausschließlich den PC-Treiber. Es flasht keine Firmware
 und installiert weder ASCOM Platform noch USB-Chip-Treiber automatisch.

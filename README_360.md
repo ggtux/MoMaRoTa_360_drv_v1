@@ -6,7 +6,7 @@ Diese Version ermöglicht eine **volle 360° Rotation** des Rotators.
 
 ### Technische Details
 
-- **Gear Ratio**: 1:2 (unverändert)
+- **Gear Ratio**: 1:2 (70 zu 140 Zähne)
 - **Rotator-Bereich**: 0-360° (vorher: 0-180°)
 - **Motor-Drehung**: 720° (2 volle Umdrehungen)
 - **Formel**: `motorSteps = (gearDegrees * 2.0 / 360.0) * 4096`

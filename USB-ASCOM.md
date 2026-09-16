@@ -6,17 +6,33 @@ Die Firmware unterstützt jetzt zusätzlich zum vorhandenen WLAN/Alpaca eine
 USB-Seriell-Verbindung mit 115200 Baud. Der C#-Treiber heißt im ASCOM-Auswahldialog
 **Astro Orbit** und implementiert `IRotatorV3`.
 
-Der Quellcode liegt in `windows/Driver`. Es handelt sich um eine klassische
-.NET-Framework-4.8-COM-DLL; die neue Setup-EXE installiert diese DLL automatisch.
-Der Setup-EXE-Installer oder alternativ das PowerShell-Skript kopiert die DLL
-samt Abhängigkeiten an einen festen Ort und registriert sie für 32- und
-64-Bit-ASCOM-Anwendungen.
+Der Quellcode liegt in `windows/Driver`. Ab Version **1.3.2** läuft der Treiber
+als eigener .NET-Framework-4.8-Prozess `AstroOrbit.LocalServer.exe` (COM LocalServer).
+Der Installer registriert diese EXE für 32- und 64-Bit-ASCOM-Anwendungen.
+NINA lädt dadurch keine Treiber-DLL mehr in seine eigene .NET-Laufzeit.
 
-**Geprüft auf dem Mac:** ESP32-Firmware-Build, C#-Build gegen die offiziellen
-ASCOM-Schnittstellen und automatisierte Tests für das USB-Protokoll.
-**Noch auf Windows / Hardware zu prüfen:** COM-Registrierung, Setup-Dialog,
-USB-Verbindung, tatsächliche Drehrichtung/Positionierung und ASCOM Conform.
-Die neue Firmware wurde nicht auf einen angeschlossenen Rotator geflasht.
+**Geprüft auf dem Mac:** Firmware-Build, Protokolltests und C#-Kompilierung.
+Die LocalServer-Version muss noch auf Windows mit NINA und Hardware geprüft werden.
+Der USB-Verbindungs- und Lesetest der vorherigen Version 1.1 war auf Windows erfolgreich.
+
+### Update auf 1.4.2
+
+NINA dokumentiert den Fehler `System.Runtime, Version=6.0.0.0` bei älteren
+In-Process-Treibern: [NINA – ASCOM Connection Issues](https://nighttime-imaging.eu/docs/master/site/troubleshooting/ascom_connection_issues/).
+Version 1.4.2 verwendet das vollständige Prozess-, Klassenfabrik- und
+Referenzzählungsmodell der offiziellen ASCOM-7-LocalServer-Vorlage. Wie die
+Vorlage wird die EXE als signierte x86-Assembly gebaut; als separater Prozess
+bleibt sie für 32- und 64-Bit-ASCOM-Clients erreichbar.
+
+1. Den vollständigen neuen `windows`-Ordner auf den Windows-PC übernehmen.
+2. NINA und andere Astroprogramme schließen. Einen verbliebenen Prozess
+   `AstroOrbit.LocalServer.exe` im Task-Manager beenden.
+3. `Build-Installer.ps1` wie unten ausführen und die neue Setup-EXE **1.4.2** installieren.
+   Die Registrierung ersetzt den alten DLL-Eintrag automatisch.
+4. NINA neu starten und **Astro Orbit** auswählen. COM-Port im Setup prüfen.
+
+Für die Übersetzungskorrektur, die dauerhaft gespeicherte mechanische Position
+und den Null-Befehl muss die mitgelieferte Firmware ebenfalls geflasht werden.
 
 ## Setup-EXE zum Weitergeben erstellen
 
@@ -25,15 +41,14 @@ Auf deinem **Windows-Build-Rechner** zusätzlich zum .NET 8 SDK
 Danach im Unterordner `windows` eine normale PowerShell öffnen:
 
 ```powershell
-
-
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-Installer.ps1
 ```
 
 Das Skript führt den Treiber-Build einschließlich der Protokolltests aus und
-kompiliert anschließend den Installer. Ausgabe bei Version 1.1.0:
+kompiliert anschließend den Installer. Ausgabe bei Version 1.4.2:
 
 ```text
-windows\dist\Astro-Orbit-ASCOM-Setup-1.1.0.exe
+windows\dist\Astro-Orbit-ASCOM-Setup-1.4.2.exe
 ```
 
 **Diese einzelne EXE kannst du weitergeben.** Sie enthält Treiber und benötigte
@@ -79,7 +94,7 @@ Vorgesehener erster Testrechner: Windows 11 x64.
    [Microsoft](https://dotnet.microsoft.com/download/dotnet/8.0) installieren.
    Das SDK wählen, nicht nur die Runtime. Visual Studio ist nicht erforderlich.
 3. Ein neues PowerShell-Fenster öffnen. `dotnet --list-sdks` muss eine 8.0-Version
-   zeigen. .NET Framework 4.8 oder neuer wird für die fertige DLL benötigt;
+   zeigen. .NET Framework 4.8 oder neuer wird für den fertigen Treiberprozess benötigt;
    auf Windows 11 ist das normalerweise vorhanden. Die Referenzdateien zum
    Kompilieren lädt das Projekt automatisch über NuGet.
 4. Diesen vollständigen Projektordner auf den PC kopieren, zum Beispiel nach
@@ -101,14 +116,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build.ps1
 wird nicht geändert. Das Skript führt zuerst die 15 Protokolltests aus und baut
 danach den Treiber. Erwartetes Ende: **Build successful**.
 
-Die DLL steht danach hier:
+Der Treiberprozess steht danach hier:
 
 ```text
-windows\Driver\bin\Release\net48\ASCOM.MoMaRoTa.Rotator.dll
+windows\Driver\bin\Release\net48\AstroOrbit.LocalServer.exe
 ```
 
-Alle DLLs im Ausgabeordner gehören zusammen. Nicht nur die einzelne Treiber-DLL
-auf einen anderen Rechner kopieren.
+Die EXE, ihre `.exe.config` und die drei Bibliotheken gehören zusammen. Zum
+Weitergeben den Installer verwenden.
 
 ## 3. Treiber registrieren
 
@@ -120,9 +135,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Register-Driver.ps1
 ```
 
 Die Dateien landen in `C:\Program Files\Astro Orbit USB ASCOM`.
-Das Skript registriert auf x64-Windows beide COM-Architekturen. Die RegAsm-Warnung
-zu `/codebase` und einer nicht signierten Assembly ist für diesen Entwicklungsbuild
-zu erwarten; sie ist kein Buildfehler. Die DLL bleibt am installierten Ort.
+Das Skript ruft die EXE mit `/regserver` auf. Diese registriert beide COM-Architekturen
+und ersetzt den alten InprocServer32-Eintrag. Die Dateien bleiben am installierten Ort.
 
 Danach wieder eine **normale Windows PowerShell** öffnen:
 
@@ -178,6 +192,19 @@ Einige ESP32-Boards starten beim Öffnen des Ports trotz deaktiviertem DTR/RTS n
 Der Treiber wartet beim Verbindungsaufbau bis zu 60 Sekunden auf die Firmware;
 ein bestehender WLAN-Verbindungsversuch kann etwa 30 Sekunden dauern.
 
+### Zusätzlich unter .NET 8 testen
+
+Nach dem Build und der Installation aus dem `windows`-Ordner:
+
+```powershell
+dotnet run --project .\ClientTest\AstroOrbit.ClientTest.csproj -c Release --no-build -- --connect
+```
+
+Das prüft COM-Aufrufe aus .NET 8 mit dem bereits gespeicherten COM-Port, ohne
+Fahrbefehl. Ohne `-- --connect` werden nur Name und Version abgefragt. Dieser Test
+ersetzt nicht den abschließenden NINA-Test. Fehler des Treiberprozesses stehen unter
+`%LOCALAPPDATA%\Astro Orbit\Logs`.
+
 ## 6. Erste kleine Bewegung
 
 Den Kabelweg frei halten und mit einer kleinen Bewegung beginnen:
@@ -196,9 +223,11 @@ nicht garantiert anhalten.
 
 Als ASCOM-Rotator **Astro Orbit** auswählen, unter **Properties / Setup**
 den COM-Port speichern und verbinden. Der serielle Monitor und andere USB-Clients
-müssen geschlossen sein. Diese DLL unterstützt eine USB-Client-Verbindung zur Zeit;
-für mehrere unabhängige Anwendungen ist in dieser Version kein gemeinsamer
-LocalServer/Hub implementiert.
+müssen geschlossen sein. Auch der LocalServer unterstützt aktuell nur eine aktive
+USB-Client-Verbindung zur Zeit; er teilt die serielle Sitzung nicht zwischen Anwendungen.
+
+Der Treiberprozess startet bei Bedarf automatisch. Wenn der letzte COM-Client sein
+Objekt freigibt, beendet ihn das ASCOM-Referenzzählungsmodell automatisch.
 
 Verfügbare Funktionen: Position, MechanicalPosition, TargetPosition, IsMoving,
 Move, MoveAbsolute, MoveMechanical, Sync, Halt und Reverse.
@@ -262,7 +291,7 @@ Installationsdateien und Benutzereinstellungen bleiben erhalten.
 
 - **dotnet nicht gefunden:** SDK installieren und ein neues Terminal öffnen.
 - **Class not registered:** Registrierung in der richtigen Architektur prüfen;
-  beide RegAsm-Aufrufe müssen erfolgreich sein. ASCOM Platform gegebenenfalls reparieren.
+  die LocalServer-Registrierung muss in beiden Ansichten vorhanden sein. ASCOM Platform gegebenenfalls reparieren.
 - **Zugriff auf COM-Port verweigert:** seriellen Monitor / zweite Anwendung schließen.
 - **Keine Antwort:** richtige Firmware, COM-Port und Datenkabel prüfen; bis zu
   60 Sekunden Bootzeit abwarten. Das Protokoll ist erst mit dieser Firmware verfügbar.

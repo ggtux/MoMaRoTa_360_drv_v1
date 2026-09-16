@@ -43,7 +43,7 @@ internal static class Program
     }
     private static JObject Hello() => new JObject { ["device"] = "MoMaRoTa", ["protocol"] = 1 };
     private static JObject Status() => new JObject { ["position"] = 15.5, ["mechanical"] = 5.5, ["target"] = 20,
-        ["stepSize"] = 0.0439453125, ["moving"] = true, ["reverse"] = false, ["motorHealthy"] = true, ["motionError"] = "" };
+        ["stepSize"] = 0.0399502841, ["moving"] = true, ["reverse"] = false, ["motorHealthy"] = true, ["motionError"] = "" };
     private static void Main()
     {
         Test("debug, malformed JSON and stale replies are ignored", () => {

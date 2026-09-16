@@ -26,7 +26,7 @@ try {
         '-p:RestoreFallbackFolders=',
         '-p:RestoreAdditionalProjectFallbackFolders='
     )
-    foreach ($project in @('.\Tests\MoMaRoTa.ProtocolTests.csproj', '.\Driver\MoMaRoTa.Driver.csproj')) {
+    foreach ($project in @('.\Tests\MoMaRoTa.ProtocolTests.csproj', '.\Driver\MoMaRoTa.Driver.csproj', '.\ClientTest\AstroOrbit.ClientTest.csproj')) {
         & dotnet restore $project @restoreOptions
         if ($LASTEXITCODE -ne 0) { throw "Package restore failed: $project. Please share the complete restore output above." }
     }
@@ -34,6 +34,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Protocol tests failed.' }
     & dotnet build '.\Driver\MoMaRoTa.Driver.csproj' --configuration Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Driver build failed.' }
+    & dotnet build '.\ClientTest\AstroOrbit.ClientTest.csproj' --configuration Release --no-restore
+    if ($LASTEXITCODE -ne 0) { throw '.NET 8 COM test client build failed.' }
     $output = Join-Path $PSScriptRoot 'Driver\bin\Release\net48'
     Write-Host "Build successful: $output" -ForegroundColor Green
     Write-Host 'For a shareable setup EXE run Build-Installer.ps1; for manual installation run Register-Driver.ps1 as administrator.'

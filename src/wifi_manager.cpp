@@ -232,27 +232,33 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
     // Control panel command handler (register both short and full paths)
     auto cmdHandler = [](AsyncWebServerRequest *request) {
         RotatorControlGuard guard;
-        if(usbOwnsRotator() && request->arg("inputI").toInt() != 2) {
+        int cmdI = request->arg("inputI").toInt();
+        if(usbOwnsRotator() && cmdI != 2) {
             request->send(409, "text/plain", "USB control active; disconnect USB first");
             return;
         }
         int cmdT = request->arg("inputT").toInt();
-        int cmdI = request->arg("inputI").toInt();
         double cmdP = request->arg("inputP").toDouble();
+        bool movementCommand = cmdI == 1 || cmdI == 5 || cmdI == 6 || cmdI == 17;
+        if(movementCommand && !isServoFeedbackHealthy()) {
+            request->send(503, "text/plain", "Motor feedback unavailable; check servo power, RX/TX and motor ID");
+            return;
+        }
+        bool accepted = true;
         
         switch(cmdI) {
             case 1:  // 90° button
-                moveServoToAngle(90.0);
+                accepted = moveServoToAngle(90.0);
                 break;
             case 2:  // Stop remains available during USB control.
                 stopServo();
                 rotatorSetTarget(rotatorPosition());
                 break;
             case 5:  // 180° button
-                moveServoToAngle(180.0);
+                accepted = moveServoToAngle(180.0);
                 break;
             case 6:  // 0° button
-                moveServoToAngle(0.0);
+                accepted = moveServoToAngle(0.0);
                 break;
             case 7:  // Speed +
                 setActiveSpeed(getActiveSpeed() + 100);
@@ -261,7 +267,7 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
                 setActiveSpeed(getActiveSpeed() - 100);
                 break;
             case 17: // Goto position
-                moveServoToAngle(cmdP);
+                accepted = moveServoToAngle(cmdP);
                 break;
             case 18: // Set zero
                 setZeroPointExact();
@@ -278,6 +284,10 @@ void setupWiFiEndpoints(AsyncWebServer &server) {
             case 23: // Reverse OFF
                 setReverseDirection(false);
                 break;
+        }
+        if(!accepted) {
+            request->send(409, "text/plain", "Movement rejected by motor or cable guard");
+            return;
         }
         request->send(200, "text/plain", "OK");
     };

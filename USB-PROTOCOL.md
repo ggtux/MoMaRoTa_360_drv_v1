@@ -51,6 +51,9 @@ Status fields: `position`, `mechanical`, `target`, `stepSize` (degrees), `moving
 `reverse`, `motorHealthy` (booleans), `motionError` (string, empty if no motion fault).
 `target` always uses sky coordinates, including after a mechanical move.
 
+`zero` requires an active USB session and no value. It sets the mechanical and
+synced positions to 0° and stores this virtual reference in the controller.
+
 Errors: 1024 unsupported command, 1025 invalid value, 1031 no valid USB session,
 1035 busy/owned, 1280 motor/movement failure. The C# driver maps these to ASCOM
 exceptions; a busy response becomes DriverException. The numerical values here

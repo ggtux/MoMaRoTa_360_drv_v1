@@ -4,10 +4,35 @@ param([switch]$Connect, [ValidateRange(-5,5)][double]$MoveDegrees = 0)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($MoveDegrees -ne 0 -and -not $Connect) { throw 'Use -Connect together with -MoveDegrees.' }
+# Catch stale DLL registration before a misleading successful PowerShell test.
+$views = @([Microsoft.Win32.RegistryView]::Registry32)
+if ([Environment]::Is64BitOperatingSystem) { $views += [Microsoft.Win32.RegistryView]::Registry64 }
+foreach ($view in $views) {
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
+    $cls = $null; $inproc = $null; $server = $null
+    try {
+        $cls = $base.OpenSubKey('SOFTWARE\Classes\CLSID\{9BA3AC78-96AF-46D7-9976-E3F940DB8587}')
+        if ($null -eq $cls) { throw "Astro Orbit is not registered in $view. Install setup 1.4.2." }
+        $inproc = $cls.OpenSubKey('InprocServer32')
+        if ($null -ne $inproc) { throw "Old DLL registration in $view. Install setup 1.4.2 with NINA closed." }
+        $server = $cls.OpenSubKey('LocalServer32')
+        if ($null -eq $server) { throw "Missing LocalServer32 in $view." }
+        $serverPath = [string]$server.GetValue('ServerExecutable')
+        if (-not (Test-Path -LiteralPath $serverPath)) { throw "Missing server: $serverPath" }
+        Write-Host "${view}: $serverPath"
+    } finally {
+        if ($null -ne $server) { $server.Dispose() }
+        if ($null -ne $inproc) { $inproc.Dispose() }
+        if ($null -ne $cls) { $cls.Dispose() }
+        $base.Dispose()
+    }
+}
 $driver = $null
 try {
     $driver = New-Object -ComObject 'ASCOM.MoMaRoTa.Rotator'
     Write-Host "Name: $($driver.Name), driver $($driver.DriverVersion), interface $($driver.InterfaceVersion)"
+    if (-not [Runtime.InteropServices.Marshal]::IsComObject($driver)) { throw 'Expected an out-of-process COM wrapper.' }
+    if ($driver.DriverVersion -ne '1.4.2') { throw 'Old driver is still active. Close all Astro software, install 1.4.2 and retry.' }
     if ($driver.InterfaceVersion -ne 3) { throw 'Unexpected driver interface version.' }
     if ($Connect) {
         $driver.SetupDialog()

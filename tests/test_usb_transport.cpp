@@ -11,6 +11,7 @@ HostSerial Serial;
 static bool moving=false, healthy=true, reverse=false, alpaca=false, accept=true;
 static double mechanical=20, offset=0, target=20, lastRelative=0;
 static int moveCalls=0, stopCalls=0;
+static int zeroCalls=0;
 static const char* error="";
 bool isServoMoving() { return moving; }
 bool isServoFeedbackHealthy() { return healthy; }
@@ -19,6 +20,7 @@ double getServoAngle() { return mechanical; }
 bool getReverseDirection() { return reverse; }
 void setReverseDirection(bool value) { reverse=value; }
 void stopServo() { moving=false; ++stopCalls; }
+void setZeroPointExact() { mechanical=0; ++zeroCalls; }
 double wrap(double v) { v=fmod(v,360); return v<0?v+360:v; }
 double rotatorPosition() { return wrap(mechanical+offset); }
 double rotatorTarget() { return target; }
@@ -64,11 +66,13 @@ int main() {
     bad(value("move",NAN),1025);bad(value("absolute",INFINITY),1025);
     healthy=false;bad(value("move",5),1280);healthy=true;
     ok(value("sync",100));assert(offset==80&&target==100&&moveCalls==0);
-    ok(value("absolute",110));assert(mechanical==30&&target==110&&moveCalls==1);
+    ok(command("zero"));assert(mechanical==0&&offset==0&&target==0&&zeroCalls==1);
+    ok(value("sync",100));assert(offset==100&&target==100&&moveCalls==0);
+    ok(value("absolute",110));assert(mechanical==10&&target==110&&moveCalls==1);
     bad(value("move",1),1035);assert(moveCalls==1);
     ok(command("halt"));assert(!moving&&stopCalls==1);
-    ok(value("mechanical",350));assert(mechanical==350&&target==70); // Target is sky angle.
-    ok(command("halt"));ok(value("move",-5));assert(lastRelative==-5&&target==65);
+    ok(value("mechanical",350));assert(mechanical==350&&target==90); // Target is sky angle.
+    ok(command("halt"));ok(value("move",-5));assert(lastRelative==-5&&target==85);
     ok(command("halt"));accept=false;bad(value("move",1),1280);accept=true;
     auto r=request("reverse");r["value"]=1;bad(execute(r),1025);r["value"]=true;ok(execute(r));assert(reverse);
     error="Motor stalled";auto state=command("status");ok(state);assert(state["value"]["motionError"]==error);

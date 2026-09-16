@@ -2,11 +2,17 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>ASCOM.MoMaRoTa.Rotator</AssemblyName>
+    <AssemblyName>AstroOrbit.LocalServer</AssemblyName>
+    <OutputType>WinExe</OutputType>
+    <StartupObject>MoMaRoTa.LocalServer</StartupObject>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <RootNamespace>MoMaRoTa</RootNamespace>
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x86</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>1.1.0</Version>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>AstroOrbit.LocalServer.snk</AssemblyOriginatorKeyFile>
+    <Version>1.4.2</Version>
     <Title>Astro Orbit</Title>
     <Product>Astro Orbit</Product>
     <Description>Astro Orbit USB ASCOM rotator driver</Description>

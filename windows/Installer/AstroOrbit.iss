@@ -1,9 +1,9 @@
 ﻿; Compile with Inno Setup 6 on Windows (Build-Installer.ps1).
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.4.2"
 #endif
 #define DriverDir "..\Driver\bin\Release\net48"
-#define DriverDll "ASCOM.MoMaRoTa.Rotator.dll"
+#define DriverExe "AstroOrbit.LocalServer.exe"
 
 [Setup]
 AppId={{D3129EF7-695E-45B9-87BA-FEC80E04A83E}
@@ -42,25 +42,23 @@ Source: "{#DriverDir}\ASCOM.Exceptions.dll"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#DriverDir}\Newtonsoft.Json.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#DriverDir}\{#DriverExe}.config"; DestDir: "{app}"; Flags: ignoreversion
 ; Register only after every dependency has been installed.
-Source: "{#DriverDir}\{#DriverDll}"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: RegisterDriver
+Source: "{#DriverDir}\{#DriverExe}"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: RegisterDriver
 
 [Code]
-function RunRegAsm(Is64: Boolean; Unregister: Boolean): Boolean;
+function RunServer(Unregister: Boolean): Boolean;
 var
   Tool, Params: String;
   ExitCode: Integer;
 begin
-  if Is64 then
-    Tool := ExpandConstant('{win}\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe')
-  else
-    Tool := ExpandConstant('{win}\Microsoft.NET\Framework\v4.0.30319\RegAsm.exe');
-  Params := '"' + ExpandConstant('{app}\{#DriverDll}') + '" /nologo';
-  if Unregister then Params := Params + ' /unregister'
-  else Params := Params + ' /codebase';
+  Tool := ExpandConstant('{app}\{#DriverExe}');
+  if Unregister then Params := '/unregserver'
+  else Params := '/regserver';
+  ExitCode := -1;
   Result := Exec(Tool, Params, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ExitCode);
   if Result then Result := ExitCode = 0;
-  Log(Format('RegAsm %s %s: exit=%d, success=%d', [Tool, Params, ExitCode, Ord(Result)]));
+  Log(Format('LocalServer %s: exit=%d, success=%d', [Params, ExitCode, Ord(Result)]));
 end;
 
 function InitializeSetup(): Boolean;
@@ -83,28 +81,19 @@ end;
 
 procedure RegisterDriver;
 var
-  Registered32, Registered64, Ignored: Boolean;
+  Ignored: Boolean;
 begin
-  Registered32 := RunRegAsm(False, False);
-  Registered64 := False;
-  if Registered32 then Registered64 := RunRegAsm(True, False);
-  if not (Registered32 and Registered64) then begin
-    { Remove any partial COM/Chooser registration before file rollback. }
-    Ignored := RunRegAsm(True, True);
-    Ignored := RunRegAsm(False, True);
-    RaiseException('Astro Orbit konnte nicht für beide ASCOM-Architekturen registriert werden. Bitte Astroprogramme schließen, ASCOM Platform prüfen und Setup erneut starten. Details stehen im Setup-Log.');
+  if not RunServer(False) then begin
+    Ignored := RunServer(True);
+    RaiseException('Astro Orbit konnte nicht registriert werden. Bitte Astroprogramme schließen und ASCOM Platform prüfen. Details: %LOCALAPPDATA%\Astro Orbit\Logs und Setup-Log.');
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  Removed32, Removed64: Boolean;
 begin
   if CurUninstallStep = usUninstall then begin
-    Removed32 := RunRegAsm(False, True);
-    Removed64 := RunRegAsm(True, True);
-    if not (Removed32 and Removed64) then begin
-      Log('WARNING: One or more COM registrations could not be removed.');
+    if not RunServer(True) then begin
+      Log('WARNING: COM registration could not be removed.');
       MsgBox('Die ASCOM-Registrierung konnte nicht vollständig entfernt werden. Bitte ASCOM Platform reparieren, Astro Orbit erneut installieren und danach deinstallieren.', mbError, MB_OK);
     end;
   end;

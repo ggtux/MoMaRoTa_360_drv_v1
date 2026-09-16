@@ -15,7 +15,7 @@ namespace MoMaRoTa
     [ProgId(DriverId)]
     [ClassInterface(ClassInterfaceType.None)]
     [ComDefaultInterface(typeof(IRotatorV3))]
-    public sealed class Rotator : IRotatorV3
+    public sealed class Rotator : ReferenceCountedObjectBase, IRotatorV3
     {
         public const string DriverId = "ASCOM.MoMaRoTa.Rotator";
         internal const string DisplayName = "Astro Orbit";
@@ -25,6 +25,14 @@ namespace MoMaRoTa
         private Timer heartbeat;
         private Exception connectionFault;
         private bool disposed;
+
+        public Rotator() { ServerObjects.Track(this); }
+        ~Rotator()
+        {
+            // The heartbeat holds only a weak reference, so COM client termination
+            // can release this instance and close its serial connection.
+            try { Dispose(); } catch { }
+        }
 
         public bool Connected
         {
@@ -47,7 +55,7 @@ namespace MoMaRoTa
                         RotatorStatus.Parse(protocol.Exchange("connect"));
                         protocol.Exchange("reverse", Settings.Reverse);
                         connectionFault = null;
-                        heartbeat = new Timer(KeepAlive, null, 2000, 2000);
+                        heartbeat = new Timer(HeartbeatTick, new WeakReference(this), 2000, 2000);
                     }
                     catch (Exception ex)
                     {
@@ -60,7 +68,12 @@ namespace MoMaRoTa
             }
         }
 
-        private void KeepAlive(object state)
+        private static void HeartbeatTick(object state)
+        {
+            var driver = ((WeakReference)state).Target as Rotator;
+            if (driver != null) driver.KeepAlive();
+        }
+        private void KeepAlive()
         {
             // No queue of timer callbacks while a foreground transaction is active.
             if (!Monitor.TryEnter(gate)) return;
@@ -68,7 +81,7 @@ namespace MoMaRoTa
             {
                 if (protocol == null || connectionFault != null) return;
                 try { RotatorStatus.Parse(protocol.Exchange("status")); }
-                catch (Exception ex) { connectionFault = ex; CloseChannel(); }
+                catch (Exception ex) { LocalServer.Log(ex.ToString()); connectionFault = ex; CloseChannel(); }
             }
             finally { Monitor.Exit(gate); }
         }
@@ -125,6 +138,7 @@ namespace MoMaRoTa
         }
         private static Exception Translate(Exception ex)
         {
+            LocalServer.Log(ex.ToString());
             if (ex is ASCOM.DriverException) return ex;
             if (ex is DeviceError device)
             {
@@ -144,10 +158,10 @@ namespace MoMaRoTa
 
         public string Name => DisplayName;
         public string Description => "Astro Orbit ESP32 / ST3215 USB field rotator";
-        public string DriverInfo => "Astro Orbit USB protocol 1; 115200 baud; ASCOM Rotator V3. Virtual zero resets on controller restart: perform a new Sync.";
-        public string DriverVersion => "1.1";
+        public string DriverInfo => "Astro Orbit ASCOM LocalServer 1.4.2 x86; USB protocol 1; 115200 baud; ASCOM Rotator V3. Persistent mechanical position and zero control in Setup.";
+        public string DriverVersion => "1.4.2";
         public short InterfaceVersion => 3;
-        public ArrayList SupportedActions => new ArrayList();
+        public ArrayList SupportedActions => new ArrayList { "ZeroPosition" };
         public bool CanReverse { get { lock (gate) { RequireConnected(); return true; } } }
         public bool IsMoving => Status().Moving;
         public float Position => Status().Position;
@@ -159,29 +173,63 @@ namespace MoMaRoTa
             get => Status(false).Reverse;
             set { lock (gate) { Request("reverse", value); Settings.Reverse = value; } }
         }
-        public void Move(float Position) { Validate(Position, true); Request("move", Position); }
-        public void MoveAbsolute(float Position) { Validate(Position, false); Request("absolute", Position); }
-        public void MoveMechanical(float Position) { Validate(Position, false); Request("mechanical", Position); }
-        public void Sync(float Position) { Validate(Position, false); Request("sync", Position); }
-        public void Halt() { Request("halt"); }
-        public string Action(string ActionName, string ActionParameters) { throw new ActionNotImplementedException(ActionName); }
+        public void Move(float Position) { LocalServer.Log("Move " + Position.ToString(CultureInfo.InvariantCulture)); Validate(Position, true); Request("move", Position); }
+        public void MoveAbsolute(float Position) { LocalServer.Log("MoveAbsolute " + Position.ToString(CultureInfo.InvariantCulture)); Validate(Position, false); Request("absolute", Position); }
+        public void MoveMechanical(float Position) { LocalServer.Log("MoveMechanical " + Position.ToString(CultureInfo.InvariantCulture)); Validate(Position, false); Request("mechanical", Position); }
+        public void Sync(float Position) { LocalServer.Log("Sync " + Position.ToString(CultureInfo.InvariantCulture)); Validate(Position, false); Request("sync", Position); }
+        public void Halt() { LocalServer.Log("Halt"); Request("halt"); }
+        private void ZeroPosition() { LocalServer.Log("ZeroPosition"); Request("zero"); }
+        private void ZeroPositionFromSetup(string portName, bool alreadyConnected)
+        {
+            if(alreadyConnected) { ZeroPosition(); return; }
+            ILineChannel temporaryChannel = null;
+            Protocol temporaryProtocol = null;
+            try
+            {
+                temporaryChannel = new SerialChannel(portName);
+                temporaryProtocol = new Protocol(temporaryChannel);
+                temporaryProtocol.Handshake();
+                RotatorStatus.Parse(temporaryProtocol.Exchange("connect"));
+                temporaryProtocol.Exchange("zero");
+            }
+            catch(Exception ex) { throw Translate(ex); }
+            finally
+            {
+                try { temporaryProtocol?.Exchange("disconnect", timeoutMs: 1000); } catch { }
+                temporaryChannel?.Dispose();
+            }
+        }
+        public string Action(string ActionName, string ActionParameters)
+        {
+            if(string.Equals(ActionName, "ZeroPosition", StringComparison.OrdinalIgnoreCase)) { ZeroPosition(); return ""; }
+            throw new ActionNotImplementedException(ActionName);
+        }
         public void CommandBlind(string Command, bool Raw) { lock (gate) RequireConnected(); throw new MethodNotImplementedException("CommandBlind"); }
         public bool CommandBool(string Command, bool Raw) { lock (gate) RequireConnected(); throw new MethodNotImplementedException("CommandBool"); }
         public string CommandString(string Command, bool Raw) { lock (gate) RequireConnected(); throw new MethodNotImplementedException("CommandString"); }
         public void SetupDialog()
         {
-            lock (gate)
-            {
-                if (protocol != null) { System.Windows.Forms.MessageBox.Show("Disconnect the rotator before changing its COM port.", DisplayName); return; }
-                // Hosts can invoke Setup from an MTA thread; WinForms needs STA.
+            bool connected;
+            lock(gate) connected = protocol != null && connectionFault == null;
+            Action<string> zero = portName => ZeroPositionFromSetup(portName, connected);
+            LocalServer.Log("SetupDialog entered on " + Thread.CurrentThread.GetApartmentState() + " thread");
+                // LocalServer COM calls already arrive on its STA message-loop
+                // thread. Showing the dialog there keeps COM messages pumping.
+                if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+                {
+                    using (var dialog = new SetupDialog(zero, connected)) dialog.ShowDialog();
+                    LocalServer.Log("SetupDialog closed");
+                    return;
+                }
+                // Retain compatibility if a host ever invokes this from MTA.
                 Exception error = null;
                 var thread = new Thread(() => {
-                    try { using (var dialog = new SetupDialog()) dialog.ShowDialog(); }
+                    try { using (var dialog = new SetupDialog(zero, connected)) dialog.ShowDialog(); }
                     catch (Exception ex) { error = ex; }
                 });
                 thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
                 if (error != null) throw Translate(error);
-            }
+            LocalServer.Log("SetupDialog closed");
         }
         public void Dispose()
         {
@@ -189,7 +237,7 @@ namespace MoMaRoTa
             {
                 if (disposed) return;
                 try { Disconnect(); }
-                finally { disposed = true; }
+                finally { disposed = true; GC.SuppressFinalize(this); }
             }
         }
 
@@ -208,7 +256,12 @@ namespace MoMaRoTa
                 if (register) profile.Register(DriverId, DisplayName);
                 else profile.Unregister(DriverId);
             }
-            finally { if (Marshal.IsComObject(profile)) Marshal.FinalReleaseComObject(profile); }
+            finally
+            {
+                object instance = profile;
+                if (Marshal.IsComObject(instance)) Marshal.FinalReleaseComObject(instance);
+                else (instance as IDisposable)?.Dispose();
+            }
         }
     }
 }

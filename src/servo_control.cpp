@@ -1,4 +1,5 @@
 #include <SMS_STS.h>
+#include <Preferences.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "servo_control.h"
@@ -18,7 +19,7 @@ static int MOTOR_ID = 0;  // Default to 0, will be updated by scanForMotor()
 #define SERVO_MAX_SPEED 4000
 #define SERVO_INIT_SPEED 2000
 
-// Gear ratio: 1:2 (180° gear = 360° motor = 1 full rotation)
+// 70-tooth driving pulley and 140-tooth driven pulley.
 #define GEAR_RATIO 2.0
 
 // Motor polarity for this gearbox/wiring. A positive ASCOM angle requires a
@@ -53,7 +54,9 @@ bool reverseDirection = false;  // Reverse rotation direction
 int activeMovementCommandSign = MOTOR_BASE_DIRECTION;
 s16 absolutePosition = 0;  // Absolute accumulated position for display
 static int physicalCableSteps = 0; // Motor steps since boot, independent of Reverse.
+static Preferences positionStore;
 s16 lastPosRead = 0;  // Last posRead value for delta calculation
+static double stepsToOutputDegrees(int steps);
 
 // Feedback variables
 s16 loadRead = 0;
@@ -71,7 +74,10 @@ const int MOVEMENT_POSITION_TOLERANCE_STEPS = 4;
 // Some ST3215 units stop a few steps short although the move has completed.
 // Keep the stricter movement tolerance, but snap the reported idle position
 // for small residuals so Alpaca clients cannot wait on Position == TargetPosition.
-const int POSITION_REPORT_SNAP_STEPS = 16;
+// The geared mechanism can settle roughly one output degree before the exact
+// step target. Treat up to 32 motor steps (about 1.4 output degrees) as reached
+// once speed is zero, and report the requested target to ASCOM clients.
+const int POSITION_REPORT_SNAP_STEPS = 32;
 const unsigned long MOVEMENT_START_GRACE_MS = 200;
 const unsigned long MOVEMENT_START_CONFIRM_MS = 1500;
 const unsigned long MOVEMENT_STOP_SETTLE_MS = 500;
@@ -87,6 +93,24 @@ unsigned long lastProgressMillis = 0;
 int bestRemainingSteps = -1;
 double targetAngleDegrees = 0.0;
 static const char* motionError = "";
+
+static void saveVirtualPosition() {
+    positionStore.begin("astro-orbit", false);
+    positionStore.putInt("logical", absolutePosition);
+    positionStore.putInt("physical", physicalCableSteps);
+    positionStore.end();
+}
+
+static void restoreVirtualPosition() {
+    positionStore.begin("astro-orbit", true);
+    absolutePosition = positionStore.getInt("logical", 0);
+    physicalCableSteps = positionStore.getInt("physical", absolutePosition * MOTOR_BASE_DIRECTION);
+    positionStore.end();
+    currentTargetPosition = 0;
+    targetAngleDegrees = stepsToOutputDegrees(absolutePosition);
+    while(targetAngleDegrees >= 360.0) targetAngleDegrees -= 360.0;
+    while(targetAngleDegrees < 0.0) targetAngleDegrees += 360.0;
+}
 
 // Motor block detection
 int feedbackRetries = 0;
@@ -136,9 +160,10 @@ void initServo() {
     servoBusMutex = xSemaphoreCreateMutex();
     Serial1.begin(1000000, SERIAL_8N1, S_RXD, S_TXD);
     st.pSerial = &Serial1;
-    // At 1 Mbit/s a complete feedback frame takes far below 20 ms. Keeping
-    // this short prevents a missing servo response from stalling Alpaca.
-    st.IOTimeOut = 20;
+    // Keep the library's proven timeout. Some controllers need noticeably
+    // longer than the wire time before they begin their reply, especially
+    // directly after startup or while the motor is under load.
+    st.IOTimeOut = 100;
     delay(200);
     
     while(!Serial1) {}
@@ -196,12 +221,12 @@ void initServo() {
     
     // Read current motor position and set as initial position
     getFeedback();
-    currentTargetPosition = 0;
-    absolutePosition = 0;
+    restoreVirtualPosition();
     lastPosRead = 0;
     movementActive = false;
-    targetAngleDegrees = 0.0;
-    Serial.println("Motor-Mode (3) initialized - position set to 0°");
+    Serial.print("Motor-Mode (3) initialized - restored position ");
+    Serial.print(targetAngleDegrees, 2);
+    Serial.println("°");
 }
 
 // ============================================================================
@@ -351,7 +376,13 @@ void updateServoMovementState() {
     bool speedStopped = (abs(speedRead) <= 10);
     bool hardwareStopped = (moveRead == 0);
     bool targetReached = (remainingSteps <= MOVEMENT_POSITION_TOLERANCE_STEPS);
-    if(speedStopped || hardwareStopped || targetReached) {
+    bool settledWithinTolerance = speedStopped &&
+                                  remainingSteps <= POSITION_REPORT_SNAP_STEPS;
+    // A single stopped indication is not reliable in step mode. In particular,
+    // ReadMove can briefly be zero while speed still shows real motion. Ending
+    // the ASCOM move on either signal made clients issue their follow-up too
+    // early. Require both stop signals, or the remaining-step target itself.
+    if((speedStopped && hardwareStopped) || targetReached || settledWithinTolerance) {
         if(stoppedSinceMillis == 0) {
             stoppedSinceMillis = now;
         } else if(now - stoppedSinceMillis >= MOVEMENT_STOP_SETTLE_MS) {
@@ -495,6 +526,7 @@ static bool moveServoToUnwrappedAngle(double cableTargetAngle) {
     currentTargetPosition += motorDelta;
     absolutePosition += logicalDelta;  // Always use logical delta for position tracking
     physicalCableSteps += motorDelta;
+    saveVirtualPosition();
     return true;
 }
 
@@ -532,7 +564,7 @@ double getServoAngle() {
     // Once a move has completed with only a small physical residual, report
     // the requested angle exactly. This protects clients that incorrectly
     // compare Position and TargetPosition instead of relying on IsMoving.
-    // 16 output steps are about 0.70 degrees with the 1:2 gearing.
+    // 32 motor steps are about 1.4 output degrees with the 1:2 gearing.
     if(!movementActive && abs(logicalRemaining) <= POSITION_REPORT_SNAP_STEPS) {
         return targetAngleDegrees;
     }
@@ -577,10 +609,12 @@ void setZeroPointMode3() {
     Serial.println("Setting zero point in motor mode (virtual)...");
     currentTargetPosition = 0;
     absolutePosition = 0;
+    physicalCableSteps = 0;
     targetAngleDegrees = 0.0;
     movementActive = false;
     movementObserved = false;
     stoppedSinceMillis = 0;
+    saveVirtualPosition();
     Serial.println("Virtual zero point set successfully");
 }
 
@@ -588,10 +622,12 @@ void setZeroPointExact() {
     Serial.println("Setting current position as zero point...");
     currentTargetPosition = 0;
     absolutePosition = 0;
+    physicalCableSteps = 0;
     targetAngleDegrees = 0.0;
     movementActive = false;
     movementObserved = false;
     stoppedSinceMillis = 0;
+    saveVirtualPosition();
     Serial.println("Current position set to 0° (zero point)");
 }
 
@@ -628,6 +664,7 @@ void stopServo() {
     targetAngleDegrees = stoppedMotorDegrees / GEAR_RATIO;
     while(targetAngleDegrees >= 360.0) targetAngleDegrees -= 360.0;
     while(targetAngleDegrees < 0.0) targetAngleDegrees += 360.0;
+    saveVirtualPosition();
     movementActive = false;
     movementObserved = false;
     stoppedSinceMillis = 0;

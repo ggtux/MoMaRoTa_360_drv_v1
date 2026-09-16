@@ -64,7 +64,7 @@ OLED Display-Steuerung (optimiert aus parkplatz/BOARD_DEV.h):
 - **Verwendung**: Umgehen mechanischer Hindernisse im astronomischen Setup
 
 ### Gear Ratio Berechnung
-- **Übersetzung**: 1:2 (180° Getriebe = 360° Motor = 4096 Steps)
+- **Übersetzung**: 1:2 (70 zu 140 Zähne)
 - **Formel**: `motorSteps = (gearDegrees * 2.0 / 360.0) * 4096`
 - **Winkelbereich**: 0 - 359.99° (Getriebe-Position)
 
