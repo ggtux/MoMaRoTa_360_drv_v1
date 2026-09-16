@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Astro Orbit Firmware Flasher</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#e9f3f0;background:#0c1113;--accent:#59d0aa}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+    main{width:min(760px,100%)}header{margin-bottom:28px}h1{font-size:clamp(2rem,6vw,4rem);margin:.15em 0;color:var(--accent)}
+    h2{margin-top:0}.lead{color:#b8c7c3;font-size:1.12rem;line-height:1.55}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+    .card{background:#151d20;border:1px solid #2d3b3f;border-radius:18px;padding:24px;box-shadow:0 16px 50px #0006}
+    .tag{display:inline-block;padding:5px 10px;border:1px solid #376657;border-radius:999px;color:#8ce4c6;font-size:.84rem}
+    button,.button{display:inline-block;width:100%;border:0;border-radius:10px;padding:13px 16px;background:#267e65;color:white;font-weight:750;font-size:1rem;text-align:center;text-decoration:none;cursor:pointer;margin-top:12px}
+    button:hover,.button:hover{background:#31977b}.secondary{background:#29373b}.secondary:hover{background:#35484d}
+    ol{padding-left:1.25rem;line-height:1.65}.small{font-size:.9rem;color:#9cadaa}.status{min-height:1.5em;color:#8ce4c6}
+    code{color:#8ce4c6}esp-web-install-button{--esp-tools-button-color:#267e65;--esp-tools-button-text-color:#fff}
+  </style>
+</head>
+<body><main>
+  <header><span class="tag">Chrome / Edge · ESP32</span><h1>Astro Orbit Flasher</h1>
+    <p class="lead">Firmware ohne VS Code installieren. USB schreibt ein vollständiges Image; OTA aktualisiert einen bereits laufenden Astro-Orbit-Controller.</p></header>
+  <div class="grid">
+    <section class="card"><h2>USB installieren</h2>
+      <ol><li>Astro Orbit per USB anschließen.</li><li>Seriellen Monitor, NINA und andere COM-Programme schließen.</li><li>Auf „USB Firmware installieren“ klicken und den Port auswählen.</li></ol>
+      <p id="release" class="status">Neuestes GitHub-Release wird geladen …</p>
+      <esp-web-install-button id="install" manifest="manifest.json">
+        <button slot="activate">USB Firmware installieren</button>
+        <span slot="unsupported">Dieser Browser unterstützt Web Serial nicht. Bitte Chrome oder Edge am Desktop verwenden.</span>
+        <span slot="not-allowed">Web Serial benötigt HTTPS oder localhost.</span>
+      </esp-web-install-button>
+      <p class="small">Beim erstmaligen USB-Flash kann der ESP32 seine gespeicherten Einstellungen verlieren, wenn im Dialog „Erase device“ gewählt wird.</p>
+    </section>
+    <section class="card"><h2>OTA über WLAN</h2>
+      <ol><li>Die normale <code>astro-orbit-firmware.bin</code> aus dem Release laden.</li><li>Mit demselben Netzwerk wie Astro Orbit verbinden.</li><li>Die Update-Seite des Controllers öffnen und die Datei auswählen.</li></ol>
+      <a class="button" href="http://astro-orbit.local/update">OTA-Seite öffnen</a>
+      <a class="button secondary" href="https://github.com/ggtux/MoMaRoTa_360_drv_v1/releases/latest">Firmware herunterladen</a>
+      <p class="small">Die OTA-Seite wird absichtlich direkt vom Controller geladen. Dadurch blockiert der Browser die lokale HTTP-Verbindung nicht als gemischten Inhalt.</p>
+    </section>
+  </div>
+</main>
+<script type="module">
+const releaseText=document.querySelector('#release');
+try{
+  const response=await fetch('https://api.github.com/repos/ggtux/MoMaRoTa_360_drv_v1/releases/latest',{headers:{Accept:'application/vnd.github+json'}});
+  if(!response.ok)throw new Error('GitHub '+response.status);
+  const release=await response.json();
+  const asset=release.assets.find(a=>a.name==='astro-orbit-factory.bin');
+  if(!asset)throw new Error('astro-orbit-factory.bin fehlt im neuesten Release');
+  const manifest={name:'Astro Orbit',version:release.tag_name,new_install_prompt_erase:true,builds:[{chipFamily:'ESP32',parts:[{path:asset.browser_download_url,offset:0}]}]};
+  document.querySelector('#install').manifest=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/json'}));
+  releaseText.textContent='Bereit: '+release.name+' ('+release.tag_name+')';
+}catch(error){releaseText.textContent='Release-Abfrage fehlgeschlagen; statisches Latest-Manifest wird verwendet. '+error.message}
+</script></body></html>

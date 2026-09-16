@@ -98,6 +98,12 @@ ASCOM-kompatible Software findet das Gerät automatisch über:
 - **Setup**: `http://<IP>/setup/v1/rotator/0/setup`
 - **WiFi Config**: `http://<IP>/setup/v1/rotator/0/wifi`
 - **Rotator Control**: `http://<IP>/setup/v1/rotator/0/configdevices`
+- **Firmware-Update**: `http://astro-orbit.local/update`
+
+### Firmware ohne VS Code
+- **USB**: `firmware-flasher/index.html` über GitHub Pages in Chrome oder Edge
+- **OTA**: `astro-orbit-firmware.bin` auf der Firmware-Update-Seite auswählen
+- **Release-Dateien bauen**: `./scripts/build_firmware_release.sh`
 
 ### Rotator-Steuerung
 - **Position anfahren**: 0-359.99° via Web-Interface oder ALPACA API
@@ -144,7 +150,8 @@ Die neue Struktur trennt klar zwischen:
 
 ## Version
 
-- **Driver Version**: 1.0
+- **Firmware Version**: 1.3.0-usb
+- **ASCOM Driver Version**: 1.4.2
 - **Interface Version**: 3 (ALPACA)
 - **Manufacturer**: Astro Orbit
 

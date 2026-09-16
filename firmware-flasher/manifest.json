@@ -1,0 +1,16 @@
+{
+  "name": "Astro Orbit",
+  "version": "latest",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "https://github.com/ggtux/MoMaRoTa_360_drv_v1/releases/latest/download/astro-orbit-factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

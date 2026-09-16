@@ -64,7 +64,7 @@ void executeUsbRotator(JsonDocument& q, JsonDocument& r) {
         JsonObject v = r["value"].to<JsonObject>();
         v["device"] = "MoMaRoTa";
         v["protocol"] = 1;
-        v["firmware"] = "1.2.2-usb";
+        v["firmware"] = "1.3.0-usb";
         v["leaseMs"] = LeaseMs;
         return;
     }

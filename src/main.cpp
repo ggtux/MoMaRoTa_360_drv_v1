@@ -62,6 +62,7 @@ void setup() {
     // Enable authenticated wireless firmware uploads from VS Code / PlatformIO
     Serial.println("Initializing OTA updates...");
     initOTAUpdate();
+    setupBrowserOTA(server);
     
     // 404 handler
     server.onNotFound([](AsyncWebServerRequest *request) {
